@@ -390,36 +390,36 @@ def fill_wb_template(
     shape: str,
     lens_features: str,
     collection: str
-) -> Tuple[str, int]:
+):
+    from openpyxl import load_workbook
+    from pathlib import Path
+    from datetime import datetime
+
     wb = load_workbook(input_xlsx)
     ws = wb.active
 
-    header_row, cols = _find_header_row_and_cols(ws, ["Наименование", "Описание"], max_rows=20, max_cols=400)
+    # --- ВАЖНО: разъединяем ВСЕ merged cells ---
+    if ws.merged_cells.ranges:
+        merged_ranges = list(ws.merged_cells.ranges)
+        for mrange in merged_ranges:
+            ws.unmerge_cells(str(mrange))
+
+    header_row, cols = _find_header_row_and_cols(
+        ws, ["Наименование", "Описание"], max_rows=20, max_cols=400
+    )
+
     col_name = cols["Наименование"]
     col_desc = cols["Описание"]
 
-    col_photo = _try_find_col(ws, "Фото", header_row)
-    col_vendor = _try_find_col(ws, "Артикул продавца", header_row)
-    col_barcodes = _try_find_col(ws, "Баркоды", header_row)
-
-    signal_cols = [col_name, col_desc]
-    for c in [col_photo, col_vendor, col_barcodes]:
-        if c is not None:
-            signal_cols.append(c)
-    if len(signal_cols) <= 2:
-        signal_cols = list(range(1, 30))
-
-    pairs12 = _generate_12_pairs_fixed_params(brand, shape, lens_features, collection, seed=1234567)
+    pairs12 = _generate_12_pairs_fixed_params(
+        brand, shape, lens_features, collection, seed=1234567
+    )
 
     filled = 0
     variant_counter = 0
 
     for r in range(header_row + 1, ws.max_row + 1):
-        if not _row_is_product(ws, r, signal_cols):
-            continue
-
-        idx = variant_counter % VARIANTS
-        title, desc = pairs12[idx]
+        title, desc = pairs12[variant_counter % 12]
 
         ws.cell(r, col_name).value = title
         ws.cell(r, col_desc).value = desc
@@ -429,8 +429,7 @@ def fill_wb_template(
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     in_path = Path(input_xlsx)
-    out_name = f"{in_path.stem}_filled_{ts}.xlsx"
-    out_path = _desktop_path() / out_name
-    wb.save(out_path)
+    out_path = in_path.parent / f"{in_path.stem}_filled_{ts}.xlsx"
 
+    wb.save(out_path)
     return str(out_path), filled
