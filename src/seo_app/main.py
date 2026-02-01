@@ -1,68 +1,128 @@
 import sys
+import json
 from pathlib import Path
-from PyQt5.QtCore import Qt
+
+from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QFileDialog, QMessageBox,
-    QComboBox, QRadioButton, QGroupBox
+    QComboBox, QRadioButton, QGroupBox, QProgressBar, QFrame
 )
 
 from seo_app.wb_fill import fill_wb_template
 
 
 # ======================
-# Theme styles (QSS)
+# Paths / settings
+# ======================
+
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+DATA_DIR = BASE_DIR / "data"
+DATA_DIR.mkdir(exist_ok=True)
+
+SETTINGS_FILE = DATA_DIR / "ui_settings.json"
+
+BRANDS_FILE = DATA_DIR / "brands.txt"
+SHAPES_FILE = DATA_DIR / "shapes.txt"
+LENSES_FILE = DATA_DIR / "lenses.txt"
+
+
+# ======================
+# UI SETTINGS
+# ======================
+
+def load_ui_settings():
+    if SETTINGS_FILE.exists():
+        try:
+            return json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {"theme": "Светлая"}
+
+
+def save_ui_settings(settings: dict):
+    SETTINGS_FILE.write_text(
+        json.dumps(settings, ensure_ascii=False, indent=2),
+        encoding="utf-8"
+    )
+
+
+# ======================
+# Themes (QSS)
 # ======================
 
 THEMES = {
     "Светлая": """
         QWidget { background: #f5f6f8; color: #1e1e1e; font-size: 13px; }
+        QFrame#card { background: white; border-radius: 14px; padding: 16px; }
+        QLabel#title { font-size: 20px; font-weight: 600; }
+        QLabel#subtitle { color: #666; }
         QComboBox, QLabel { padding: 6px; }
+
         QPushButton {
             background: qlineargradient(x1:0,y1:0,x2:0,y2:1,
                         stop:0 #ffffff, stop:1 #dcdcdc);
             border: 1px solid #b5b5b5;
-            border-radius: 8px;
+            border-radius: 10px;
             padding: 10px;
         }
         QPushButton:hover { background: #ffffff; }
-        QPushButton:pressed {
-            background: #cfcfcf;
-            padding-top: 12px;
+        QPushButton:pressed { background: #cfcfcf; padding-top: 12px; }
+
+        QPushButton#primary {
+            background: qlineargradient(x1:0,y1:0,x2:0,y2:1,
+                        stop:0 #4a86ff, stop:1 #2f6fff);
+            color: white;
+            font-weight: 600;
+            border: none;
         }
     """,
 
     "Тёмная": """
         QWidget { background: #1f1f1f; color: #e6e6e6; font-size: 13px; }
+        QFrame#card { background: #2a2a2a; border-radius: 14px; padding: 16px; }
+        QLabel#title { font-size: 20px; font-weight: 600; }
+        QLabel#subtitle { color: #aaa; }
         QComboBox, QLabel { padding: 6px; }
+
         QPushButton {
-            background: qlineargradient(x1:0,y1:0,x2:0,y2:1,
-                        stop:0 #3a3a3a, stop:1 #2a2a2a);
+            background: #333;
             border: 1px solid #555;
-            border-radius: 8px;
+            border-radius: 10px;
             padding: 10px;
         }
         QPushButton:hover { background: #444; }
-        QPushButton:pressed {
-            background: #1e1e1e;
-            padding-top: 12px;
+        QPushButton:pressed { background: #222; padding-top: 12px; }
+
+        QPushButton#primary {
+            background: #4a86ff;
+            color: white;
+            font-weight: 600;
+            border: none;
         }
     """,
 
     "Graphite": """
         QWidget { background: #2b2e34; color: #f0f0f0; font-size: 13px; }
+        QFrame#card { background: #353a43; border-radius: 14px; padding: 16px; }
+        QLabel#title { font-size: 20px; font-weight: 600; }
+        QLabel#subtitle { color: #bbb; }
         QComboBox, QLabel { padding: 6px; }
+
         QPushButton {
-            background: qlineargradient(x1:0,y1:0,x2:0,y2:1,
-                        stop:0 #4a4f57, stop:1 #2f333a);
+            background: #4a4f57;
             border: 1px solid #666;
             border-radius: 10px;
             padding: 10px;
         }
         QPushButton:hover { background: #555b65; }
-        QPushButton:pressed {
-            background: #23262b;
-            padding-top: 12px;
+        QPushButton:pressed { background: #23262b; padding-top: 12px; }
+
+        QPushButton#primary {
+            background: #4a86ff;
+            color: white;
+            font-weight: 600;
+            border: none;
         }
     """
 }
@@ -71,20 +131,6 @@ THEMES = {
 # ======================
 # Helpers
 # ======================
-
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
-DATA_DIR = BASE_DIR / "data"
-BRANDS_FILE = DATA_DIR / "brands.txt"
-SHAPES_FILE = DATA_DIR / "shapes.txt"
-LENSES_FILE = DATA_DIR / "lenses.txt"
-
-
-def ensure_data():
-    DATA_DIR.mkdir(exist_ok=True)
-    for f in [BRANDS_FILE, SHAPES_FILE, LENSES_FILE]:
-        if not f.exists():
-            f.write_text("", encoding="utf-8")
-
 
 def load_list(path: Path):
     if not path.exists():
@@ -95,19 +141,7 @@ def load_list(path: Path):
     )
 
 
-def save_item(path: Path, value: str):
-    value = value.strip()
-    if not value:
-        return False
-    items = load_list(path)
-    if value in items:
-        return False
-    items.append(value)
-    path.write_text("\n".join(sorted(items, key=str.lower)), encoding="utf-8")
-    return True
-
-
-def combo(items, placeholder):
+def make_combo(items, placeholder):
     cb = QComboBox()
     cb.setEditable(True)
     cb.addItems(items)
@@ -117,16 +151,6 @@ def combo(items, placeholder):
     return cb
 
 
-def row_with_plus(cb, handler):
-    row = QHBoxLayout()
-    row.addWidget(cb, 1)
-    btn = QPushButton("+")
-    btn.setFixedWidth(36)
-    btn.clicked.connect(handler)
-    row.addWidget(btn)
-    return row
-
-
 # ======================
 # Main Window
 # ======================
@@ -134,17 +158,39 @@ def row_with_plus(cb, handler):
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
-        ensure_data()
 
+        self.settings = load_ui_settings()
         self.setWindowTitle("Sunglasses SEO PRO")
-        self.resize(920, 620)
-
-        self.input_file = ""
+        self.resize(960, 680)
 
         root = QVBoxLayout(self)
-        root.setSpacing(12)
+        root.setSpacing(14)
 
-        # ---- File
+        # ---------- SaaS Header Card ----------
+        card = QFrame()
+        card.setObjectName("card")
+        card_layout = QVBoxLayout(card)
+
+        title = QLabel("🕶️ Sunglasses SEO PRO")
+        title.setObjectName("title")
+        subtitle = QLabel("Генерация живых SEO-описаний для маркетплейсов")
+        subtitle.setObjectName("subtitle")
+
+        card_layout.addWidget(title)
+        card_layout.addWidget(subtitle)
+        root.addWidget(card)
+
+        # ---------- Theme selector ----------
+        theme_row = QHBoxLayout()
+        theme_row.addWidget(QLabel("🎨 Тема интерфейса"))
+        self.cb_theme = QComboBox()
+        self.cb_theme.addItems(THEMES.keys())
+        self.cb_theme.setCurrentText(self.settings.get("theme", "Светлая"))
+        self.cb_theme.currentTextChanged.connect(self.change_theme)
+        theme_row.addWidget(self.cb_theme)
+        root.addLayout(theme_row)
+
+        # ---------- File ----------
         file_row = QHBoxLayout()
         btn_file = QPushButton("📂 Загрузить XLSX")
         btn_file.clicked.connect(self.pick_file)
@@ -154,54 +200,44 @@ class MainWindow(QWidget):
         file_row.addWidget(self.lbl_file, 1)
         root.addLayout(file_row)
 
-        # ---- Combos
-        self.cb_brand = combo(load_list(BRANDS_FILE), "Бренд")
-        root.addLayout(row_with_plus(self.cb_brand, lambda: save_item(BRANDS_FILE, self.cb_brand.currentText())))
+        # ---------- Combos ----------
+        self.cb_brand = make_combo(load_list(BRANDS_FILE), "Бренд")
+        root.addWidget(self.cb_brand)
 
-        self.cb_shape = combo(load_list(SHAPES_FILE), "Форма оправы")
-        root.addLayout(row_with_plus(self.cb_shape, lambda: save_item(SHAPES_FILE, self.cb_shape.currentText())))
+        self.cb_shape = make_combo(load_list(SHAPES_FILE), "Форма оправы")
+        root.addWidget(self.cb_shape)
 
-        self.cb_lens = combo(load_list(LENSES_FILE), "Линзы")
-        root.addLayout(row_with_plus(self.cb_lens, lambda: save_item(LENSES_FILE, self.cb_lens.currentText())))
+        self.cb_lens = make_combo(load_list(LENSES_FILE), "Линзы")
+        root.addWidget(self.cb_lens)
 
-        self.cb_collection = combo(
-            ["Весна–Лето 2025–2026", "Весна–Лето 2026", "Осень–Зима 2025–2026"],
+        self.cb_collection = make_combo(
+            ["Весна–Лето 2025–2026", "Весна–Лето 2026"],
             "Коллекция"
         )
         root.addWidget(self.cb_collection)
 
-        # ---- Style
-        style_box = QGroupBox("Стиль описания")
-        sb = QHBoxLayout(style_box)
-        self.rb_neutral = QRadioButton("Нейтральный")
-        self.rb_premium = QRadioButton("Премиум")
-        self.rb_mass = QRadioButton("Масс")
-        self.rb_social = QRadioButton("Соцсети")
-        self.rb_neutral.setChecked(True)
-        for rb in [self.rb_neutral, self.rb_premium, self.rb_mass, self.rb_social]:
-            sb.addWidget(rb)
-        root.addWidget(style_box)
+        # ---------- Progress ----------
+        self.progress = QProgressBar()
+        self.progress.setValue(0)
+        root.addWidget(self.progress)
 
-        # ---- Theme
-        self.cb_theme = QComboBox()
-        self.cb_theme.addItems(THEMES.keys())
-        self.cb_theme.currentTextChanged.connect(self.apply_theme)
-        root.addWidget(QLabel("🎨 Тема интерфейса"))
-        root.addWidget(self.cb_theme)
-
-        # ---- Run
-        self.btn_run = QPushButton("ГОТОВО")
+        # ---------- Run ----------
+        self.btn_run = QPushButton("🚀 СГЕНЕРИРОВАТЬ")
+        self.btn_run.setObjectName("primary")
         self.btn_run.clicked.connect(self.run)
         root.addWidget(self.btn_run)
 
-        self.lbl_status = QLabel("")
-        self.lbl_status.setWordWrap(True)
-        root.addWidget(self.lbl_status)
+        self.apply_theme(self.settings.get("theme", "Светлая"))
 
-        self.apply_theme("Светлая")
+    # ---------- Logic ----------
 
     def apply_theme(self, name):
         self.setStyleSheet(THEMES.get(name, ""))
+
+    def change_theme(self, name):
+        self.settings["theme"] = name
+        save_ui_settings(self.settings)
+        self.apply_theme(name)
 
     def pick_file(self):
         path, _ = QFileDialog.getOpenFileName(self, "Выберите XLSX", "", "Excel (*.xlsx)")
@@ -210,28 +246,35 @@ class MainWindow(QWidget):
             self.lbl_file.setText(path)
 
     def run(self):
-        if not self.input_file:
+        if not hasattr(self, "input_file"):
             QMessageBox.warning(self, "Ошибка", "Выберите XLSX файл")
             return
 
-        style = (
-            "premium" if self.rb_premium.isChecked()
-            else "mass" if self.rb_mass.isChecked()
-            else "social" if self.rb_social.isChecked()
-            else "neutral"
-        )
+        self.progress.setValue(0)
+        self.btn_run.setEnabled(False)
 
-        out, rows = fill_wb_template(
-            input_xlsx=self.input_file,
-            brand=self.cb_brand.currentText(),
-            shape=self.cb_shape.currentText(),
-            lens_features=self.cb_lens.currentText(),
-            collection=self.cb_collection.currentText(),
-            style=style
-        )
+        # имитация прогресса
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.fake_progress)
+        self.timer.start(80)
 
-        self.lbl_status.setText(f"Готово. Заполнено строк: {rows}\n{out}")
-        QMessageBox.information(self, "Готово", "Файл создан")
+        try:
+            out, rows = fill_wb_template(
+                input_xlsx=self.input_file,
+                brand=self.cb_brand.currentText(),
+                shape=self.cb_shape.currentText(),
+                lens_features=self.cb_lens.currentText(),
+                collection=self.cb_collection.currentText(),
+            )
+            QMessageBox.information(self, "Готово", f"Создан файл:\n{out}")
+        finally:
+            self.timer.stop()
+            self.progress.setValue(100)
+            self.btn_run.setEnabled(True)
+
+    def fake_progress(self):
+        if self.progress.value() < 90:
+            self.progress.setValue(self.progress.value() + 2)
 
 
 def main():
