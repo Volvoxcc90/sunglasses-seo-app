@@ -1,5 +1,7 @@
 import sys, os, json, subprocess
 from pathlib import Path
+from urllib.parse import quote
+
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout,
@@ -18,12 +20,10 @@ DEFAULT_BRANDS = [
     "Tom Ford","Chanel","Cartier","Oakley","Polaroid","Carrera","Fendi",
     "Givenchy","Balenciaga","Miu Miu","Burberry","Armani","Hugo Boss"
 ]
-
 DEFAULT_SHAPES = [
     "Квадратная","Овальная","Круглая","Прямоугольная",
     "Авиаторы","Cat Eye","Оверсайз","Панто","Wayfarer"
 ]
-
 DEFAULT_LENSES = [
     "UV400","поляризационные","фотохромные","хамелеон",
     "градиентные","зеркальные","антибликовые","с откидными линзами"
@@ -111,7 +111,7 @@ def load_settings(settings_file: Path) -> dict:
             pass
     return {
         "theme": "Light",
-        "ui_scale": "100%",
+        "ui_scale": "115%",
         "brand": "",
         "shape": "",
         "lens": "",
@@ -126,23 +126,7 @@ def save_settings(settings_file: Path, data: dict):
 
 
 # ==========================
-# Arrow SVG (always visible)
-# ==========================
-def ensure_arrow_svg(path: Path, color_hex: str):
-    """
-    Создаёт SVG-стрелку, чтобы она не пропадала на темах.
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if path.exists():
-        return
-    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12">
-  <path d="M2 4.2 L6 8.2 L10 4.2" fill="none" stroke="{color_hex}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>"""
-    path.write_text(svg, encoding="utf-8")
-
-
-# ==========================
-# Themes (Notion/Stripe feel) + arrow colors
+# Themes + UI scale
 # ==========================
 THEME_META = {
     "Light":   {"bg": "#f7f7f8", "card": "#ffffff", "text": "#111", "muted": "#666", "border": "#ddd", "primary": "#111", "chunk": "#111", "arrow": "#111"},
@@ -157,11 +141,19 @@ SCALE_MAP = {
     "100%": 13,
     "115%": 15,
     "130%": 17,
+    "145%": 19,
 }
+
+def arrow_data_uri(color_hex: str) -> str:
+    # Встраиваем SVG прямо в QSS (никаких файлов/путей)
+    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12">
+<path d="M2 4.2 L6 8.2 L10 4.2" fill="none" stroke="{color_hex}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>"""
+    # Qt любит url(data:image/svg+xml;utf8,....) — нужен urlencode
+    return f"data:image/svg+xml;utf8,{quote(svg)}"
 
 
 def build_stylesheet(meta: dict, font_px: int, arrow_uri: str) -> str:
-    # arrow_uri должен быть file:///...
     return f"""
         QWidget {{
             background: {meta["bg"]};
@@ -176,25 +168,29 @@ def build_stylesheet(meta: dict, font_px: int, arrow_uri: str) -> str:
             border: 1px solid {meta["border"]};
         }}
 
-        QLabel#title {{ font-size: {font_px + 9}px; font-weight: 650; }}
+        QLabel#title {{ font-size: {font_px + 10}px; font-weight: 650; }}
         QLabel#subtitle {{ color: {meta["muted"]}; }}
 
         QComboBox {{
-            padding: 8px 34px 8px 10px;
-            border-radius: 10px;
+            padding: 9px 38px 9px 12px;
+            border-radius: 12px;
             border: 1px solid {meta["border"]};
             background: {meta["card"]};
         }}
-        QComboBox:focus {{
+        QComboBox:hover {{
             border: 1px solid {meta["primary"]};
         }}
+        QComboBox:focus {{
+            border: 2px solid {meta["primary"]};
+        }}
+
         QComboBox::drop-down {{
             subcontrol-origin: padding;
             subcontrol-position: top right;
-            width: 28px;
+            width: 34px;
             border-left: 1px solid {meta["border"]};
-            border-top-right-radius: 10px;
-            border-bottom-right-radius: 10px;
+            border-top-right-radius: 12px;
+            border-bottom-right-radius: 12px;
             background: {meta["card"]};
         }}
         QComboBox::down-arrow {{
@@ -210,7 +206,7 @@ def build_stylesheet(meta: dict, font_px: int, arrow_uri: str) -> str:
             background: {meta["card"]};
         }}
         QPushButton:hover {{
-            background: rgba(0,0,0,0.05);
+            background: rgba(0,0,0,0.06);
         }}
 
         QPushButton#primary {{
@@ -219,6 +215,7 @@ def build_stylesheet(meta: dict, font_px: int, arrow_uri: str) -> str:
             border: none;
             font-weight: 650;
             padding: 12px;
+            border-radius: 14px;
         }}
         QPushButton#primary:hover {{
             opacity: 0.95;
@@ -226,14 +223,14 @@ def build_stylesheet(meta: dict, font_px: int, arrow_uri: str) -> str:
 
         QProgressBar {{
             border: 1px solid {meta["border"]};
-            border-radius: 10px;
-            height: 18px;
+            border-radius: 12px;
+            height: 20px;
             text-align: center;
             background: {meta["card"]};
         }}
         QProgressBar::chunk {{
             background: {meta["chunk"]};
-            border-radius: 10px;
+            border-radius: 12px;
         }}
     """
 
@@ -261,7 +258,7 @@ class MainWindow(QWidget):
         self.input_file = ""
 
         self.setWindowTitle("Sunglasses SEO PRO")
-        self.resize(1020, 780)
+        self.resize(1040, 820)
 
         root = QVBoxLayout(self)
         root.setSpacing(14)
@@ -270,12 +267,10 @@ class MainWindow(QWidget):
         card = QFrame()
         card.setObjectName("card")
         cl = QVBoxLayout(card)
-
         title = QLabel("🕶️ Sunglasses SEO PRO")
         title.setObjectName("title")
         subtitle = QLabel("Живые SEO-описания • Выпадающие списки • Прогресс • Темы")
         subtitle.setObjectName("subtitle")
-
         cl.addWidget(title)
         cl.addWidget(subtitle)
         root.addWidget(card)
@@ -283,7 +278,6 @@ class MainWindow(QWidget):
         # ---- Theme + Scale row
         ts_row = QHBoxLayout()
         ts_row.addWidget(QLabel("🎨 Тема"))
-
         self.cb_theme = QComboBox()
         self.cb_theme.addItems(list(THEME_META.keys()))
         self.cb_theme.setCurrentText(self.settings.get("theme", "Light"))
@@ -293,19 +287,18 @@ class MainWindow(QWidget):
         ts_row.addWidget(QLabel("🔎 Размер UI"))
         self.cb_scale = QComboBox()
         self.cb_scale.addItems(list(SCALE_MAP.keys()))
-        self.cb_scale.setCurrentText(self.settings.get("ui_scale", "100%"))
+        self.cb_scale.setCurrentText(self.settings.get("ui_scale", "115%"))
         self.cb_scale.currentTextChanged.connect(self.on_scale_changed)
         ts_row.addWidget(self.cb_scale)
-
         root.addLayout(ts_row)
 
         # ---- Data folder row
         data_row = QHBoxLayout()
-        self.lbl_data = QLabel(f"📁 Справочники: {self.data_dir}")
-        self.lbl_data.setWordWrap(True)
+        lbl = QLabel(f"📁 Справочники: {self.data_dir}")
+        lbl.setWordWrap(True)
         btn_open = QPushButton("📂 Папка")
         btn_open.clicked.connect(self.open_data_folder)
-        data_row.addWidget(self.lbl_data, 1)
+        data_row.addWidget(lbl, 1)
         data_row.addWidget(btn_open)
         root.addLayout(data_row)
 
@@ -367,15 +360,7 @@ class MainWindow(QWidget):
         self.btn_run.clicked.connect(self.run)
         root.addWidget(self.btn_run)
 
-        # Apply theme/scale at the end
         self.apply_theme_and_scale()
-
-    # ---------- folder ----------
-    def open_data_folder(self):
-        try:
-            subprocess.Popen(f'explorer "{self.data_dir}"')
-        except Exception:
-            QMessageBox.warning(self, "Ошибка", f"Не удалось открыть папку:\n{self.data_dir}")
 
     # ---------- theme/scale ----------
     def apply_theme_and_scale(self):
@@ -383,12 +368,8 @@ class MainWindow(QWidget):
         scale = self.cb_scale.currentText()
 
         meta = THEME_META.get(theme, THEME_META["Light"])
-        font_px = SCALE_MAP.get(scale, 13)
-
-        # Создаём SVG-стрелку под тему (в data_dir), чтобы она НЕ пропадала
-        arrow_file = self.data_dir / f"arrow_{theme}.svg"
-        ensure_arrow_svg(arrow_file, meta["arrow"])
-        arrow_uri = arrow_file.resolve().as_uri()
+        font_px = SCALE_MAP.get(scale, 15)
+        arrow_uri = arrow_data_uri(meta["arrow"])
 
         self.setStyleSheet(build_stylesheet(meta, font_px, arrow_uri))
 
@@ -401,6 +382,13 @@ class MainWindow(QWidget):
         self.settings["ui_scale"] = self.cb_scale.currentText()
         save_settings(self.settings_file, self.settings)
         self.apply_theme_and_scale()
+
+    # ---------- folder ----------
+    def open_data_folder(self):
+        try:
+            subprocess.Popen(f'explorer "{self.data_dir}"')
+        except Exception:
+            QMessageBox.warning(self, "Ошибка", f"Не удалось открыть папку:\n{self.data_dir}")
 
     # ---------- file ----------
     def pick_file(self):
@@ -433,7 +421,6 @@ class MainWindow(QWidget):
 
         style = "premium" if self.rb_premium.isChecked() else "social" if self.rb_social.isChecked() else "neutral"
 
-        # сохраняем выборы
         self.settings.update({
             "brand": self.cb_brand.currentText(),
             "shape": self.cb_shape.currentText(),
