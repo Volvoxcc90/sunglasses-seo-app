@@ -1,6 +1,5 @@
-import sys, os, json, subprocess
+import sys, os, json, subprocess, base64
 from pathlib import Path
-from urllib.parse import quote
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
@@ -83,9 +82,11 @@ def make_combo(items: list[str], placeholder: str) -> QComboBox:
     cb.setMaxVisibleItems(20)
     cb.addItems(items)
     cb.setPlaceholderText(placeholder)
+
     comp = cb.completer()
     comp.setCaseSensitivity(Qt.CaseInsensitive)
     comp.setFilterMode(Qt.MatchContains)
+
     return cb
 
 
@@ -126,7 +127,7 @@ def save_settings(settings_file: Path, data: dict):
 
 
 # ==========================
-# Themes + UI scale
+# Themes + scale
 # ==========================
 THEME_META = {
     "Light":   {"bg": "#f7f7f8", "card": "#ffffff", "text": "#111", "muted": "#666", "border": "#ddd", "primary": "#111", "chunk": "#111", "arrow": "#111"},
@@ -144,13 +145,14 @@ SCALE_MAP = {
     "145%": 19,
 }
 
-def arrow_data_uri(color_hex: str) -> str:
-    # Встраиваем SVG прямо в QSS (никаких файлов/путей)
-    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12">
-<path d="M2 4.2 L6 8.2 L10 4.2" fill="none" stroke="{color_hex}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+
+def arrow_data_uri_b64(color_hex: str) -> str:
+    # base64 SVG — самый совместимый способ для Qt QSS
+    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 12 12">
+<path d="M2 4.2 L6 8.2 L10 4.2" fill="none" stroke="{color_hex}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>"""
-    # Qt любит url(data:image/svg+xml;utf8,....) — нужен urlencode
-    return f"data:image/svg+xml;utf8,{quote(svg)}"
+    b = base64.b64encode(svg.encode("utf-8")).decode("ascii")
+    return f"data:image/svg+xml;base64,{b}"
 
 
 def build_stylesheet(meta: dict, font_px: int, arrow_uri: str) -> str:
@@ -171,8 +173,17 @@ def build_stylesheet(meta: dict, font_px: int, arrow_uri: str) -> str:
         QLabel#title {{ font-size: {font_px + 10}px; font-weight: 650; }}
         QLabel#subtitle {{ color: {meta["muted"]}; }}
 
+        /* Важно: чтобы popup списка был читаемым */
+        QAbstractItemView {{
+            background: {meta["card"]};
+            color: {meta["text"]};
+            border: 1px solid {meta["border"]};
+            selection-background-color: {meta["primary"]};
+            selection-color: white;
+        }}
+
         QComboBox {{
-            padding: 9px 38px 9px 12px;
+            padding: 10px 44px 10px 12px;  /* место под стрелку */
             border-radius: 12px;
             border: 1px solid {meta["border"]};
             background: {meta["card"]};
@@ -187,16 +198,17 @@ def build_stylesheet(meta: dict, font_px: int, arrow_uri: str) -> str:
         QComboBox::drop-down {{
             subcontrol-origin: padding;
             subcontrol-position: top right;
-            width: 34px;
+            width: 40px;                  /* шире, чтобы точно была зона */
             border-left: 1px solid {meta["border"]};
             border-top-right-radius: 12px;
             border-bottom-right-radius: 12px;
             background: {meta["card"]};
         }}
+
         QComboBox::down-arrow {{
             image: url("{arrow_uri}");
-            width: 12px;
-            height: 12px;
+            width: 14px;
+            height: 14px;
         }}
 
         QPushButton {{
@@ -267,10 +279,12 @@ class MainWindow(QWidget):
         card = QFrame()
         card.setObjectName("card")
         cl = QVBoxLayout(card)
+
         title = QLabel("🕶️ Sunglasses SEO PRO")
         title.setObjectName("title")
         subtitle = QLabel("Живые SEO-описания • Выпадающие списки • Прогресс • Темы")
         subtitle.setObjectName("subtitle")
+
         cl.addWidget(title)
         cl.addWidget(subtitle)
         root.addWidget(card)
@@ -278,6 +292,7 @@ class MainWindow(QWidget):
         # ---- Theme + Scale row
         ts_row = QHBoxLayout()
         ts_row.addWidget(QLabel("🎨 Тема"))
+
         self.cb_theme = QComboBox()
         self.cb_theme.addItems(list(THEME_META.keys()))
         self.cb_theme.setCurrentText(self.settings.get("theme", "Light"))
@@ -366,11 +381,10 @@ class MainWindow(QWidget):
     def apply_theme_and_scale(self):
         theme = self.cb_theme.currentText()
         scale = self.cb_scale.currentText()
-
         meta = THEME_META.get(theme, THEME_META["Light"])
         font_px = SCALE_MAP.get(scale, 15)
-        arrow_uri = arrow_data_uri(meta["arrow"])
 
+        arrow_uri = arrow_data_uri_b64(meta["arrow"])
         self.setStyleSheet(build_stylesheet(meta, font_px, arrow_uri))
 
     def on_theme_changed(self, _):
@@ -453,6 +467,10 @@ class MainWindow(QWidget):
 
 def main():
     app = QApplication(sys.argv)
+
+    # ВАЖНО: Fusion стиль делает QSS предсказуемым и возвращает стрелки
+    app.setStyle("Fusion")
+
     w = MainWindow()
     w.show()
     sys.exit(app.exec_())
