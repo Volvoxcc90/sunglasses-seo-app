@@ -1,6 +1,5 @@
 import sys, os, json, subprocess
 from pathlib import Path
-
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout,
@@ -9,41 +8,6 @@ from PyQt5.QtWidgets import (
 )
 
 from seo_app.wb_fill import fill_wb_template
-
-
-# ==========================
-# Themes (Notion / Stripe)
-# ==========================
-THEMES = {
-    "Light": """
-        QWidget { background: #f7f7f8; color: #111; font-size: 13px; }
-        QFrame#card { background: #ffffff; border-radius: 14px; padding: 18px; }
-        QLabel#title { font-size: 22px; font-weight: 600; }
-        QLabel#subtitle { color: #666; }
-        QComboBox { padding: 8px; border-radius: 10px; border: 1px solid #ddd; background: #fff; }
-        QComboBox::drop-down { width: 28px; border-left: 1px solid #ddd; }
-        QPushButton { padding: 10px; border-radius: 12px; border: 1px solid #ddd; background: #fff; }
-        QPushButton:hover { background: #f1f1f2; }
-        QPushButton#primary { background: #111; color: white; border: none; font-weight: 600; }
-        QPushButton#primary:hover { background: #333; }
-        QProgressBar { border: 1px solid #ddd; border-radius: 10px; height: 18px; text-align: center; }
-        QProgressBar::chunk { background: #111; border-radius: 10px; }
-    """,
-    "Dark": """
-        QWidget { background: #1e1f22; color: #f2f2f2; font-size: 13px; }
-        QFrame#card { background: #2a2b2f; border-radius: 14px; padding: 18px; }
-        QLabel#title { font-size: 22px; font-weight: 600; }
-        QLabel#subtitle { color: #aaa; }
-        QComboBox { padding: 8px; border-radius: 10px; border: 1px solid #444; background: #1e1f22; }
-        QComboBox::drop-down { width: 28px; border-left: 1px solid #444; }
-        QPushButton { padding: 10px; border-radius: 12px; border: 1px solid #444; background: #2a2b2f; color: #f2f2f2; }
-        QPushButton:hover { background: #34363c; }
-        QPushButton#primary { background: #4a86ff; color: white; border: none; font-weight: 600; }
-        QPushButton#primary:hover { background: #3b78ff; }
-        QProgressBar { border: 1px solid #444; border-radius: 10px; height: 18px; text-align: center; }
-        QProgressBar::chunk { background: #4a86ff; border-radius: 10px; }
-    """
-}
 
 
 # ==========================
@@ -130,9 +94,148 @@ def row_with_plus(cb: QComboBox, on_plus):
     row.addWidget(cb, 1)
     btn = QPushButton("+")
     btn.setFixedWidth(38)
+    btn.setToolTip("Добавить в список")
     btn.clicked.connect(on_plus)
     row.addWidget(btn)
     return row
+
+
+# ==========================
+# Settings persistence
+# ==========================
+def load_settings(settings_file: Path) -> dict:
+    if settings_file.exists():
+        try:
+            return json.loads(settings_file.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {
+        "theme": "Light",
+        "ui_scale": "100%",
+        "brand": "",
+        "shape": "",
+        "lens": "",
+        "collection": "Весна–Лето 2025–2026",
+        "style": "neutral"
+    }
+
+
+def save_settings(settings_file: Path, data: dict):
+    settings_file.parent.mkdir(parents=True, exist_ok=True)
+    settings_file.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+# ==========================
+# Arrow SVG (always visible)
+# ==========================
+def ensure_arrow_svg(path: Path, color_hex: str):
+    """
+    Создаёт SVG-стрелку, чтобы она не пропадала на темах.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        return
+    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12">
+  <path d="M2 4.2 L6 8.2 L10 4.2" fill="none" stroke="{color_hex}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>"""
+    path.write_text(svg, encoding="utf-8")
+
+
+# ==========================
+# Themes (Notion/Stripe feel) + arrow colors
+# ==========================
+THEME_META = {
+    "Light":   {"bg": "#f7f7f8", "card": "#ffffff", "text": "#111", "muted": "#666", "border": "#ddd", "primary": "#111", "chunk": "#111", "arrow": "#111"},
+    "Dark":    {"bg": "#1e1f22", "card": "#2a2b2f", "text": "#f2f2f2", "muted": "#aaa", "border": "#444", "primary": "#4a86ff", "chunk": "#4a86ff", "arrow": "#f2f2f2"},
+    "Graphite":{"bg": "#2b2e34", "card": "#353a43", "text": "#f0f0f0", "muted": "#b9c0cc", "border": "#555d68", "primary": "#4a86ff", "chunk": "#4a86ff", "arrow": "#f0f0f0"},
+    "Ocean":   {"bg": "#f4f8ff", "card": "#ffffff", "text": "#0b1220", "muted": "#4b5563", "border": "#cfe0ff", "primary": "#2563eb", "chunk": "#2563eb", "arrow": "#0b1220"},
+    "Emerald": {"bg": "#f3fbf7", "card": "#ffffff", "text": "#072012", "muted": "#3a6b52", "border": "#bfe8d2", "primary": "#059669", "chunk": "#059669", "arrow": "#072012"},
+    "Sepia":   {"bg": "#fbf6ef", "card": "#ffffff", "text": "#2a1f14", "muted": "#6b4f33", "border": "#ead7c2", "primary": "#7c3aed", "chunk": "#7c3aed", "arrow": "#2a1f14"},
+}
+
+SCALE_MAP = {
+    "100%": 13,
+    "115%": 15,
+    "130%": 17,
+}
+
+
+def build_stylesheet(meta: dict, font_px: int, arrow_uri: str) -> str:
+    # arrow_uri должен быть file:///...
+    return f"""
+        QWidget {{
+            background: {meta["bg"]};
+            color: {meta["text"]};
+            font-size: {font_px}px;
+        }}
+
+        QFrame#card {{
+            background: {meta["card"]};
+            border-radius: 14px;
+            padding: 18px;
+            border: 1px solid {meta["border"]};
+        }}
+
+        QLabel#title {{ font-size: {font_px + 9}px; font-weight: 650; }}
+        QLabel#subtitle {{ color: {meta["muted"]}; }}
+
+        QComboBox {{
+            padding: 8px 34px 8px 10px;
+            border-radius: 10px;
+            border: 1px solid {meta["border"]};
+            background: {meta["card"]};
+        }}
+        QComboBox:focus {{
+            border: 1px solid {meta["primary"]};
+        }}
+        QComboBox::drop-down {{
+            subcontrol-origin: padding;
+            subcontrol-position: top right;
+            width: 28px;
+            border-left: 1px solid {meta["border"]};
+            border-top-right-radius: 10px;
+            border-bottom-right-radius: 10px;
+            background: {meta["card"]};
+        }}
+        QComboBox::down-arrow {{
+            image: url("{arrow_uri}");
+            width: 12px;
+            height: 12px;
+        }}
+
+        QPushButton {{
+            padding: 10px;
+            border-radius: 12px;
+            border: 1px solid {meta["border"]};
+            background: {meta["card"]};
+        }}
+        QPushButton:hover {{
+            background: rgba(0,0,0,0.05);
+        }}
+
+        QPushButton#primary {{
+            background: {meta["primary"]};
+            color: white;
+            border: none;
+            font-weight: 650;
+            padding: 12px;
+        }}
+        QPushButton#primary:hover {{
+            opacity: 0.95;
+        }}
+
+        QProgressBar {{
+            border: 1px solid {meta["border"]};
+            border-radius: 10px;
+            height: 18px;
+            text-align: center;
+            background: {meta["card"]};
+        }}
+        QProgressBar::chunk {{
+            background: {meta["chunk"]};
+            border-radius: 10px;
+        }}
+    """
 
 
 # ==========================
@@ -154,11 +257,11 @@ class MainWindow(QWidget):
         ensure_txt(self.shapes_file, DEFAULT_SHAPES)
         ensure_txt(self.lenses_file, DEFAULT_LENSES)
 
-        self.settings = self.load_settings()
+        self.settings = load_settings(self.settings_file)
         self.input_file = ""
 
         self.setWindowTitle("Sunglasses SEO PRO")
-        self.resize(980, 740)
+        self.resize(1020, 780)
 
         root = QVBoxLayout(self)
         root.setSpacing(14)
@@ -167,23 +270,34 @@ class MainWindow(QWidget):
         card = QFrame()
         card.setObjectName("card")
         cl = QVBoxLayout(card)
+
         title = QLabel("🕶️ Sunglasses SEO PRO")
         title.setObjectName("title")
-        subtitle = QLabel("Живые SEO-описания • Выпадающие списки • Прогресс")
+        subtitle = QLabel("Живые SEO-описания • Выпадающие списки • Прогресс • Темы")
         subtitle.setObjectName("subtitle")
+
         cl.addWidget(title)
         cl.addWidget(subtitle)
         root.addWidget(card)
 
-        # ---- Theme
-        theme_row = QHBoxLayout()
-        theme_row.addWidget(QLabel("🎨 Тема"))
+        # ---- Theme + Scale row
+        ts_row = QHBoxLayout()
+        ts_row.addWidget(QLabel("🎨 Тема"))
+
         self.cb_theme = QComboBox()
-        self.cb_theme.addItems(["Light", "Dark"])
+        self.cb_theme.addItems(list(THEME_META.keys()))
         self.cb_theme.setCurrentText(self.settings.get("theme", "Light"))
-        self.cb_theme.currentTextChanged.connect(self.on_theme)
-        theme_row.addWidget(self.cb_theme, 1)
-        root.addLayout(theme_row)
+        self.cb_theme.currentTextChanged.connect(self.on_theme_changed)
+        ts_row.addWidget(self.cb_theme, 1)
+
+        ts_row.addWidget(QLabel("🔎 Размер UI"))
+        self.cb_scale = QComboBox()
+        self.cb_scale.addItems(list(SCALE_MAP.keys()))
+        self.cb_scale.setCurrentText(self.settings.get("ui_scale", "100%"))
+        self.cb_scale.currentTextChanged.connect(self.on_scale_changed)
+        ts_row.addWidget(self.cb_scale)
+
+        root.addLayout(ts_row)
 
         # ---- Data folder row
         data_row = QHBoxLayout()
@@ -195,7 +309,7 @@ class MainWindow(QWidget):
         data_row.addWidget(btn_open)
         root.addLayout(data_row)
 
-        # ---- File
+        # ---- File row
         file_row = QHBoxLayout()
         btn_file = QPushButton("📄 Загрузить XLSX")
         btn_file.clicked.connect(self.pick_file)
@@ -245,6 +359,7 @@ class MainWindow(QWidget):
 
         # ---- Progress + Run
         self.progress = QProgressBar()
+        self.progress.setValue(0)
         root.addWidget(self.progress)
 
         self.btn_run = QPushButton("🚀 СГЕНЕРИРОВАТЬ")
@@ -252,40 +367,49 @@ class MainWindow(QWidget):
         self.btn_run.clicked.connect(self.run)
         root.addWidget(self.btn_run)
 
-        self.apply_theme(self.cb_theme.currentText())
+        # Apply theme/scale at the end
+        self.apply_theme_and_scale()
 
-    # ---------- helpers ----------
-    def load_settings(self):
-        if self.settings_file.exists():
-            try:
-                return json.loads(self.settings_file.read_text(encoding="utf-8"))
-            except Exception:
-                pass
-        return {}
-
-    def save_settings(self):
-        self.settings_file.write_text(json.dumps(self.settings, ensure_ascii=False, indent=2), encoding="utf-8")
-
+    # ---------- folder ----------
     def open_data_folder(self):
         try:
             subprocess.Popen(f'explorer "{self.data_dir}"')
         except Exception:
             QMessageBox.warning(self, "Ошибка", f"Не удалось открыть папку:\n{self.data_dir}")
 
-    def apply_theme(self, theme):
-        self.setStyleSheet(THEMES.get(theme, THEMES["Light"]))
+    # ---------- theme/scale ----------
+    def apply_theme_and_scale(self):
+        theme = self.cb_theme.currentText()
+        scale = self.cb_scale.currentText()
 
-    def on_theme(self, theme):
-        self.settings["theme"] = theme
-        self.save_settings()
-        self.apply_theme(theme)
+        meta = THEME_META.get(theme, THEME_META["Light"])
+        font_px = SCALE_MAP.get(scale, 13)
 
+        # Создаём SVG-стрелку под тему (в data_dir), чтобы она НЕ пропадала
+        arrow_file = self.data_dir / f"arrow_{theme}.svg"
+        ensure_arrow_svg(arrow_file, meta["arrow"])
+        arrow_uri = arrow_file.resolve().as_uri()
+
+        self.setStyleSheet(build_stylesheet(meta, font_px, arrow_uri))
+
+    def on_theme_changed(self, _):
+        self.settings["theme"] = self.cb_theme.currentText()
+        save_settings(self.settings_file, self.settings)
+        self.apply_theme_and_scale()
+
+    def on_scale_changed(self, _):
+        self.settings["ui_scale"] = self.cb_scale.currentText()
+        save_settings(self.settings_file, self.settings)
+        self.apply_theme_and_scale()
+
+    # ---------- file ----------
     def pick_file(self):
         path, _ = QFileDialog.getOpenFileName(self, "Выберите XLSX", "", "Excel (*.xlsx)")
         if path:
             self.input_file = path
             self.lbl_file.setText(path)
 
+    # ---------- add items ----------
     def add_brand(self):
         v = self.cb_brand.currentText().strip()
         if save_item(self.brands_file, v):
@@ -301,6 +425,7 @@ class MainWindow(QWidget):
         if save_item(self.lenses_file, v):
             refresh_combo(self.cb_lens, self.lenses_file, v)
 
+    # ---------- run ----------
     def run(self):
         if not self.input_file:
             QMessageBox.warning(self, "Ошибка", "Выбери XLSX файл")
@@ -308,14 +433,15 @@ class MainWindow(QWidget):
 
         style = "premium" if self.rb_premium.isChecked() else "social" if self.rb_social.isChecked() else "neutral"
 
+        # сохраняем выборы
         self.settings.update({
             "brand": self.cb_brand.currentText(),
             "shape": self.cb_shape.currentText(),
             "lens": self.cb_lens.currentText(),
             "collection": self.cb_collection.currentText(),
-            "style": style
+            "style": style,
         })
-        self.save_settings()
+        save_settings(self.settings_file, self.settings)
 
         self.progress.setValue(0)
         self.btn_run.setEnabled(False)
