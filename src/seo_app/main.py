@@ -1,4 +1,4 @@
-import sys, os, json, subprocess, base64
+import sys, os, json, subprocess
 from pathlib import Path
 
 from PyQt5.QtCore import Qt
@@ -30,6 +30,106 @@ DEFAULT_LENSES = [
 
 
 # ==========================
+# Themes + UI scale
+# ==========================
+THEME_META = {
+    "Light":   {"bg": "#f7f7f8", "card": "#ffffff", "text": "#111", "muted": "#666", "border": "#ddd", "primary": "#111", "chunk": "#111"},
+    "Dark":    {"bg": "#1e1f22", "card": "#2a2b2f", "text": "#f2f2f2", "muted": "#aaa", "border": "#444", "primary": "#4a86ff", "chunk": "#4a86ff"},
+    "Graphite":{"bg": "#2b2e34", "card": "#353a43", "text": "#f0f0f0", "muted": "#b9c0cc", "border": "#555d68", "primary": "#4a86ff", "chunk": "#4a86ff"},
+    "Ocean":   {"bg": "#f4f8ff", "card": "#ffffff", "text": "#0b1220", "muted": "#4b5563", "border": "#cfe0ff", "primary": "#2563eb", "chunk": "#2563eb"},
+    "Emerald": {"bg": "#f3fbf7", "card": "#ffffff", "text": "#072012", "muted": "#3a6b52", "border": "#bfe8d2", "primary": "#059669", "chunk": "#059669"},
+    "Sepia":   {"bg": "#fbf6ef", "card": "#ffffff", "text": "#2a1f14", "muted": "#6b4f33", "border": "#ead7c2", "primary": "#7c3aed", "chunk": "#7c3aed"},
+}
+SCALE_MAP = {"100%": 13, "115%": 15, "130%": 17, "145%": 19}
+
+def build_stylesheet(meta: dict, font_px: int) -> str:
+    # Нативную стрелку ComboBox скрываем (она у тебя исчезает),
+    # вместо неё у нас отдельная кнопка ▼ справа.
+    return f"""
+        QWidget {{
+            background: {meta["bg"]};
+            color: {meta["text"]};
+            font-size: {font_px}px;
+        }}
+
+        QFrame#card {{
+            background: {meta["card"]};
+            border-radius: 14px;
+            padding: 18px;
+            border: 1px solid {meta["border"]};
+        }}
+
+        QLabel#title {{ font-size: {font_px + 10}px; font-weight: 650; }}
+        QLabel#subtitle {{ color: {meta["muted"]}; }}
+
+        QAbstractItemView {{
+            background: {meta["card"]};
+            color: {meta["text"]};
+            border: 1px solid {meta["border"]};
+            selection-background-color: {meta["primary"]};
+            selection-color: white;
+        }}
+
+        QComboBox {{
+            padding: 10px 12px 10px 12px;
+            border-radius: 12px;
+            border: 1px solid {meta["border"]};
+            background: {meta["card"]};
+        }}
+        QComboBox:hover {{ border: 1px solid {meta["primary"]}; }}
+        QComboBox:focus {{ border: 2px solid {meta["primary"]}; }}
+
+        QComboBox::drop-down {{ width: 0px; border: none; }}
+        QComboBox::down-arrow {{ image: none; }}
+
+        QPushButton {{
+            padding: 10px;
+            border-radius: 12px;
+            border: 1px solid {meta["border"]};
+            background: {meta["card"]};
+        }}
+        QPushButton:hover {{ background: rgba(0,0,0,0.06); }}
+
+        QPushButton#primary {{
+            background: {meta["primary"]};
+            color: white;
+            border: none;
+            font-weight: 650;
+            padding: 12px;
+            border-radius: 14px;
+        }}
+
+        QPushButton#drop {{
+            font-weight: 800;
+            padding: 10px;
+            min-width: 44px;
+            max-width: 44px;
+            border-radius: 12px;
+        }}
+
+        QPushButton#plus {{
+            font-weight: 900;
+            padding: 10px;
+            min-width: 44px;
+            max-width: 44px;
+            border-radius: 12px;
+        }}
+
+        QProgressBar {{
+            border: 1px solid {meta["border"]};
+            border-radius: 12px;
+            height: 20px;
+            text-align: center;
+            background: {meta["card"]};
+        }}
+        QProgressBar::chunk {{
+            background: {meta["chunk"]};
+            border-radius: 12px;
+        }}
+    """
+
+
+# ==========================
 # Data dir logic
 # ==========================
 def get_data_dir() -> Path:
@@ -56,16 +156,22 @@ def load_list(path: Path) -> list[str]:
     )
 
 
-def save_item(path: Path, value: str) -> bool:
+def save_item(path: Path, value: str) -> str:
+    """
+    Возвращает статус:
+    - "empty" если пусто
+    - "exists" если уже есть
+    - "added" если добавлено
+    """
     value = value.strip()
     if not value:
-        return False
+        return "empty"
     items = load_list(path)
     if value in items:
-        return False
+        return "exists"
     items.append(value)
     path.write_text("\n".join(sorted(set(items), key=str.lower)), encoding="utf-8")
-    return True
+    return "added"
 
 
 def refresh_combo(cb: QComboBox, path: Path, keep: str):
@@ -90,14 +196,37 @@ def make_combo(items: list[str], placeholder: str) -> QComboBox:
     return cb
 
 
-def row_with_plus(cb: QComboBox, on_plus):
+def row_combo_drop_plus(cb: QComboBox, on_drop, on_plus) -> QHBoxLayout:
+    """Ряд: [ComboBox][▼][+]"""
     row = QHBoxLayout()
     row.addWidget(cb, 1)
-    btn = QPushButton("+")
-    btn.setFixedWidth(38)
-    btn.setToolTip("Добавить в список")
-    btn.clicked.connect(on_plus)
-    row.addWidget(btn)
+
+    btn_drop = QPushButton("▼")
+    btn_drop.setObjectName("drop")
+    btn_drop.setToolTip("Открыть список")
+    btn_drop.clicked.connect(on_drop)
+    row.addWidget(btn_drop)
+
+    btn_plus = QPushButton("+")
+    btn_plus.setObjectName("plus")
+    btn_plus.setToolTip("Добавить в список")
+    btn_plus.clicked.connect(on_plus)
+    row.addWidget(btn_plus)
+
+    return row
+
+
+def row_combo_drop_only(cb: QComboBox, on_drop) -> QHBoxLayout:
+    """Ряд: [ComboBox][▼] — без +"""
+    row = QHBoxLayout()
+    row.addWidget(cb, 1)
+
+    btn_drop = QPushButton("▼")
+    btn_drop.setObjectName("drop")
+    btn_drop.setToolTip("Открыть список")
+    btn_drop.clicked.connect(on_drop)
+    row.addWidget(btn_drop)
+
     return row
 
 
@@ -124,127 +253,6 @@ def load_settings(settings_file: Path) -> dict:
 def save_settings(settings_file: Path, data: dict):
     settings_file.parent.mkdir(parents=True, exist_ok=True)
     settings_file.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-# ==========================
-# Themes + scale
-# ==========================
-THEME_META = {
-    "Light":   {"bg": "#f7f7f8", "card": "#ffffff", "text": "#111", "muted": "#666", "border": "#ddd", "primary": "#111", "chunk": "#111", "arrow": "#111"},
-    "Dark":    {"bg": "#1e1f22", "card": "#2a2b2f", "text": "#f2f2f2", "muted": "#aaa", "border": "#444", "primary": "#4a86ff", "chunk": "#4a86ff", "arrow": "#f2f2f2"},
-    "Graphite":{"bg": "#2b2e34", "card": "#353a43", "text": "#f0f0f0", "muted": "#b9c0cc", "border": "#555d68", "primary": "#4a86ff", "chunk": "#4a86ff", "arrow": "#f0f0f0"},
-    "Ocean":   {"bg": "#f4f8ff", "card": "#ffffff", "text": "#0b1220", "muted": "#4b5563", "border": "#cfe0ff", "primary": "#2563eb", "chunk": "#2563eb", "arrow": "#0b1220"},
-    "Emerald": {"bg": "#f3fbf7", "card": "#ffffff", "text": "#072012", "muted": "#3a6b52", "border": "#bfe8d2", "primary": "#059669", "chunk": "#059669", "arrow": "#072012"},
-    "Sepia":   {"bg": "#fbf6ef", "card": "#ffffff", "text": "#2a1f14", "muted": "#6b4f33", "border": "#ead7c2", "primary": "#7c3aed", "chunk": "#7c3aed", "arrow": "#2a1f14"},
-}
-
-SCALE_MAP = {
-    "100%": 13,
-    "115%": 15,
-    "130%": 17,
-    "145%": 19,
-}
-
-
-def arrow_data_uri_b64(color_hex: str) -> str:
-    # base64 SVG — самый совместимый способ для Qt QSS
-    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 12 12">
-<path d="M2 4.2 L6 8.2 L10 4.2" fill="none" stroke="{color_hex}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>"""
-    b = base64.b64encode(svg.encode("utf-8")).decode("ascii")
-    return f"data:image/svg+xml;base64,{b}"
-
-
-def build_stylesheet(meta: dict, font_px: int, arrow_uri: str) -> str:
-    return f"""
-        QWidget {{
-            background: {meta["bg"]};
-            color: {meta["text"]};
-            font-size: {font_px}px;
-        }}
-
-        QFrame#card {{
-            background: {meta["card"]};
-            border-radius: 14px;
-            padding: 18px;
-            border: 1px solid {meta["border"]};
-        }}
-
-        QLabel#title {{ font-size: {font_px + 10}px; font-weight: 650; }}
-        QLabel#subtitle {{ color: {meta["muted"]}; }}
-
-        /* Важно: чтобы popup списка был читаемым */
-        QAbstractItemView {{
-            background: {meta["card"]};
-            color: {meta["text"]};
-            border: 1px solid {meta["border"]};
-            selection-background-color: {meta["primary"]};
-            selection-color: white;
-        }}
-
-        QComboBox {{
-            padding: 10px 44px 10px 12px;  /* место под стрелку */
-            border-radius: 12px;
-            border: 1px solid {meta["border"]};
-            background: {meta["card"]};
-        }}
-        QComboBox:hover {{
-            border: 1px solid {meta["primary"]};
-        }}
-        QComboBox:focus {{
-            border: 2px solid {meta["primary"]};
-        }}
-
-        QComboBox::drop-down {{
-            subcontrol-origin: padding;
-            subcontrol-position: top right;
-            width: 40px;                  /* шире, чтобы точно была зона */
-            border-left: 1px solid {meta["border"]};
-            border-top-right-radius: 12px;
-            border-bottom-right-radius: 12px;
-            background: {meta["card"]};
-        }}
-
-        QComboBox::down-arrow {{
-            image: url("{arrow_uri}");
-            width: 14px;
-            height: 14px;
-        }}
-
-        QPushButton {{
-            padding: 10px;
-            border-radius: 12px;
-            border: 1px solid {meta["border"]};
-            background: {meta["card"]};
-        }}
-        QPushButton:hover {{
-            background: rgba(0,0,0,0.06);
-        }}
-
-        QPushButton#primary {{
-            background: {meta["primary"]};
-            color: white;
-            border: none;
-            font-weight: 650;
-            padding: 12px;
-            border-radius: 14px;
-        }}
-        QPushButton#primary:hover {{
-            opacity: 0.95;
-        }}
-
-        QProgressBar {{
-            border: 1px solid {meta["border"]};
-            border-radius: 12px;
-            height: 20px;
-            text-align: center;
-            background: {meta["card"]};
-        }}
-        QProgressBar::chunk {{
-            background: {meta["chunk"]};
-            border-radius: 12px;
-        }}
-    """
 
 
 # ==========================
@@ -279,12 +287,10 @@ class MainWindow(QWidget):
         card = QFrame()
         card.setObjectName("card")
         cl = QVBoxLayout(card)
-
         title = QLabel("🕶️ Sunglasses SEO PRO")
         title.setObjectName("title")
         subtitle = QLabel("Живые SEO-описания • Выпадающие списки • Прогресс • Темы")
         subtitle.setObjectName("subtitle")
-
         cl.addWidget(title)
         cl.addWidget(subtitle)
         root.addWidget(card)
@@ -292,7 +298,6 @@ class MainWindow(QWidget):
         # ---- Theme + Scale row
         ts_row = QHBoxLayout()
         ts_row.addWidget(QLabel("🎨 Тема"))
-
         self.cb_theme = QComboBox()
         self.cb_theme.addItems(list(THEME_META.keys()))
         self.cb_theme.setCurrentText(self.settings.get("theme", "Light"))
@@ -327,21 +332,21 @@ class MainWindow(QWidget):
         file_row.addWidget(self.lbl_file, 1)
         root.addLayout(file_row)
 
-        # ---- Combos
+        # ---- Combos (с рабочими +)
         root.addWidget(QLabel("Бренд"))
         self.cb_brand = make_combo(load_list(self.brands_file), "Выбери бренд или впиши свой")
         self.cb_brand.setCurrentText(self.settings.get("brand", ""))
-        root.addLayout(row_with_plus(self.cb_brand, self.add_brand))
+        root.addLayout(row_combo_drop_plus(self.cb_brand, self.cb_brand.showPopup, self.add_brand))
 
         root.addWidget(QLabel("Форма оправы"))
         self.cb_shape = make_combo(load_list(self.shapes_file), "Выбери форму или впиши свою")
         self.cb_shape.setCurrentText(self.settings.get("shape", ""))
-        root.addLayout(row_with_plus(self.cb_shape, self.add_shape))
+        root.addLayout(row_combo_drop_plus(self.cb_shape, self.cb_shape.showPopup, self.add_shape))
 
         root.addWidget(QLabel("Линзы / особенности"))
         self.cb_lens = make_combo(load_list(self.lenses_file), "Выбери линзы или впиши свои")
         self.cb_lens.setCurrentText(self.settings.get("lens", ""))
-        root.addLayout(row_with_plus(self.cb_lens, self.add_lens))
+        root.addLayout(row_combo_drop_plus(self.cb_lens, self.cb_lens.showPopup, self.add_lens))
 
         root.addWidget(QLabel("Коллекция"))
         self.cb_collection = make_combo(
@@ -349,7 +354,7 @@ class MainWindow(QWidget):
             "Выбери коллекцию"
         )
         self.cb_collection.setCurrentText(self.settings.get("collection", "Весна–Лето 2025–2026"))
-        root.addWidget(self.cb_collection)
+        root.addLayout(row_combo_drop_only(self.cb_collection, self.cb_collection.showPopup))
 
         # ---- Style
         style_box = QGroupBox("Стиль описания")
@@ -381,11 +386,11 @@ class MainWindow(QWidget):
     def apply_theme_and_scale(self):
         theme = self.cb_theme.currentText()
         scale = self.cb_scale.currentText()
+
         meta = THEME_META.get(theme, THEME_META["Light"])
         font_px = SCALE_MAP.get(scale, 15)
 
-        arrow_uri = arrow_data_uri_b64(meta["arrow"])
-        self.setStyleSheet(build_stylesheet(meta, font_px, arrow_uri))
+        self.setStyleSheet(build_stylesheet(meta, font_px))
 
     def on_theme_changed(self, _):
         self.settings["theme"] = self.cb_theme.currentText()
@@ -411,21 +416,31 @@ class MainWindow(QWidget):
             self.input_file = path
             self.lbl_file.setText(path)
 
-    # ---------- add items ----------
+    # ---------- add items (с понятными сообщениями) ----------
+    def _add_item_with_feedback(self, label: str, cb: QComboBox, file_path: Path):
+        value = cb.currentText().strip()
+        status = save_item(file_path, value)
+
+        if status == "empty":
+            QMessageBox.warning(self, "Пусто", f"{label}: введи значение и нажми +")
+            return
+
+        if status == "exists":
+            QMessageBox.information(self, "Уже есть", f"{label}: «{value}» уже есть в списке")
+            return
+
+        # added
+        refresh_combo(cb, file_path, value)
+        QMessageBox.information(self, "Добавлено", f"{label}: «{value}» добавлено в список")
+
     def add_brand(self):
-        v = self.cb_brand.currentText().strip()
-        if save_item(self.brands_file, v):
-            refresh_combo(self.cb_brand, self.brands_file, v)
+        self._add_item_with_feedback("Бренд", self.cb_brand, self.brands_file)
 
     def add_shape(self):
-        v = self.cb_shape.currentText().strip()
-        if save_item(self.shapes_file, v):
-            refresh_combo(self.cb_shape, self.shapes_file, v)
+        self._add_item_with_feedback("Форма оправы", self.cb_shape, self.shapes_file)
 
     def add_lens(self):
-        v = self.cb_lens.currentText().strip()
-        if save_item(self.lenses_file, v):
-            refresh_combo(self.cb_lens, self.lenses_file, v)
+        self._add_item_with_feedback("Линзы / особенности", self.cb_lens, self.lenses_file)
 
     # ---------- run ----------
     def run(self):
@@ -467,10 +482,7 @@ class MainWindow(QWidget):
 
 def main():
     app = QApplication(sys.argv)
-
-    # ВАЖНО: Fusion стиль делает QSS предсказуемым и возвращает стрелки
-    app.setStyle("Fusion")
-
+    app.setStyle("Fusion")  # делает QSS стабильнее
     w = MainWindow()
     w.show()
     sys.exit(app.exec_())
