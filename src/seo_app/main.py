@@ -43,8 +43,8 @@ THEME_META = {
 SCALE_MAP = {"100%": 13, "115%": 15, "130%": 17, "145%": 19}
 
 def build_stylesheet(meta: dict, font_px: int) -> str:
-    # Нативную стрелку ComboBox скрываем (она у тебя исчезает),
-    # вместо неё у нас отдельная кнопка ▼ справа.
+    # Важно: скрываем нативную стрелку QComboBox (чтобы не было “пустой зоны”),
+    # и рисуем стрелку отдельной кнопкой ▼ рядом.
     return f"""
         QWidget {{
             background: {meta["bg"]};
@@ -79,6 +79,7 @@ def build_stylesheet(meta: dict, font_px: int) -> str:
         QComboBox:hover {{ border: 1px solid {meta["primary"]}; }}
         QComboBox:focus {{ border: 2px solid {meta["primary"]}; }}
 
+        /* Скрываем системную стрелку */
         QComboBox::drop-down {{ width: 0px; border: none; }}
         QComboBox::down-arrow {{ image: none; }}
 
@@ -99,16 +100,18 @@ def build_stylesheet(meta: dict, font_px: int) -> str:
             border-radius: 14px;
         }}
 
+        /* Кнопка-стрелка ▼ */
         QPushButton#drop {{
-            font-weight: 800;
+            font-weight: 700;
             padding: 10px;
             min-width: 44px;
             max-width: 44px;
             border-radius: 12px;
         }}
 
+        /* Кнопка + */
         QPushButton#plus {{
-            font-weight: 900;
+            font-weight: 800;
             padding: 10px;
             min-width: 44px;
             max-width: 44px;
@@ -156,22 +159,16 @@ def load_list(path: Path) -> list[str]:
     )
 
 
-def save_item(path: Path, value: str) -> str:
-    """
-    Возвращает статус:
-    - "empty" если пусто
-    - "exists" если уже есть
-    - "added" если добавлено
-    """
+def save_item(path: Path, value: str) -> bool:
     value = value.strip()
     if not value:
-        return "empty"
+        return False
     items = load_list(path)
     if value in items:
-        return "exists"
+        return False
     items.append(value)
     path.write_text("\n".join(sorted(set(items), key=str.lower)), encoding="utf-8")
-    return "added"
+    return True
 
 
 def refresh_combo(cb: QComboBox, path: Path, keep: str):
@@ -197,7 +194,10 @@ def make_combo(items: list[str], placeholder: str) -> QComboBox:
 
 
 def row_combo_drop_plus(cb: QComboBox, on_drop, on_plus) -> QHBoxLayout:
-    """Ряд: [ComboBox][▼][+]"""
+    """
+    Ряд: [ComboBox][▼][+]
+    ▼ всегда видима (это кнопка), открывает popup списка.
+    """
     row = QHBoxLayout()
     row.addWidget(cb, 1)
 
@@ -212,20 +212,6 @@ def row_combo_drop_plus(cb: QComboBox, on_drop, on_plus) -> QHBoxLayout:
     btn_plus.setToolTip("Добавить в список")
     btn_plus.clicked.connect(on_plus)
     row.addWidget(btn_plus)
-
-    return row
-
-
-def row_combo_drop_only(cb: QComboBox, on_drop) -> QHBoxLayout:
-    """Ряд: [ComboBox][▼] — без +"""
-    row = QHBoxLayout()
-    row.addWidget(cb, 1)
-
-    btn_drop = QPushButton("▼")
-    btn_drop.setObjectName("drop")
-    btn_drop.setToolTip("Открыть список")
-    btn_drop.clicked.connect(on_drop)
-    row.addWidget(btn_drop)
 
     return row
 
@@ -310,6 +296,7 @@ class MainWindow(QWidget):
         self.cb_scale.setCurrentText(self.settings.get("ui_scale", "115%"))
         self.cb_scale.currentTextChanged.connect(self.on_scale_changed)
         ts_row.addWidget(self.cb_scale)
+
         root.addLayout(ts_row)
 
         # ---- Data folder row
@@ -332,21 +319,33 @@ class MainWindow(QWidget):
         file_row.addWidget(self.lbl_file, 1)
         root.addLayout(file_row)
 
-        # ---- Combos (с рабочими +)
+        # ---- Combos with real ▼ buttons
         root.addWidget(QLabel("Бренд"))
         self.cb_brand = make_combo(load_list(self.brands_file), "Выбери бренд или впиши свой")
         self.cb_brand.setCurrentText(self.settings.get("brand", ""))
-        root.addLayout(row_combo_drop_plus(self.cb_brand, self.cb_brand.showPopup, self.add_brand))
+        root.addLayout(row_combo_drop_plus(
+            self.cb_brand,
+            on_drop=self.cb_brand.showPopup,
+            on_plus=self.add_brand
+        ))
 
         root.addWidget(QLabel("Форма оправы"))
         self.cb_shape = make_combo(load_list(self.shapes_file), "Выбери форму или впиши свою")
         self.cb_shape.setCurrentText(self.settings.get("shape", ""))
-        root.addLayout(row_combo_drop_plus(self.cb_shape, self.cb_shape.showPopup, self.add_shape))
+        root.addLayout(row_combo_drop_plus(
+            self.cb_shape,
+            on_drop=self.cb_shape.showPopup,
+            on_plus=self.add_shape
+        ))
 
         root.addWidget(QLabel("Линзы / особенности"))
         self.cb_lens = make_combo(load_list(self.lenses_file), "Выбери линзы или впиши свои")
         self.cb_lens.setCurrentText(self.settings.get("lens", ""))
-        root.addLayout(row_combo_drop_plus(self.cb_lens, self.cb_lens.showPopup, self.add_lens))
+        root.addLayout(row_combo_drop_plus(
+            self.cb_lens,
+            on_drop=self.cb_lens.showPopup,
+            on_plus=self.add_lens
+        ))
 
         root.addWidget(QLabel("Коллекция"))
         self.cb_collection = make_combo(
@@ -354,8 +353,17 @@ class MainWindow(QWidget):
             "Выбери коллекцию"
         )
         self.cb_collection.setCurrentText(self.settings.get("collection", "Весна–Лето 2025–2026"))
-        root.addLayout(row_combo_drop_only(self.cb_collection, self.cb_collection.showPopup))
+        root.addLayout(row_combo_drop_plus(
+            self.cb_collection,
+            on_drop=self.cb_collection.showPopup,
+            on_plus=lambda: None  # коллекцию добавлять не нужно, но кнопку оставим “пустой”
+        ))
 
+        # Сделаем + у коллекции неактивным (чтобы не путало)
+        # (кнопка плюс там есть, но мы её отключим по факту ниже)
+        # Для этого найдём последнюю кнопку "plus" и отключим:
+        # проще — отключить через явный доступ:
+        # (мы не храним ссылку, но можно просто не добавлять "+". Оставим как есть и отключим ниже.)
         # ---- Style
         style_box = QGroupBox("Стиль описания")
         sb = QHBoxLayout(style_box)
@@ -381,6 +389,13 @@ class MainWindow(QWidget):
         root.addWidget(self.btn_run)
 
         self.apply_theme_and_scale()
+
+        # Отключаем “+” у коллекции (последняя кнопка plus в интерфейсе)
+        # Надёжно: берём все кнопки plus и отключаем последнюю.
+        plus_buttons = self.findChildren(QPushButton, "plus")
+        if plus_buttons:
+            plus_buttons[-1].setEnabled(False)
+            plus_buttons[-1].setToolTip("Для коллекции добавление не нужно")
 
     # ---------- theme/scale ----------
     def apply_theme_and_scale(self):
@@ -416,31 +431,21 @@ class MainWindow(QWidget):
             self.input_file = path
             self.lbl_file.setText(path)
 
-    # ---------- add items (с понятными сообщениями) ----------
-    def _add_item_with_feedback(self, label: str, cb: QComboBox, file_path: Path):
-        value = cb.currentText().strip()
-        status = save_item(file_path, value)
-
-        if status == "empty":
-            QMessageBox.warning(self, "Пусто", f"{label}: введи значение и нажми +")
-            return
-
-        if status == "exists":
-            QMessageBox.information(self, "Уже есть", f"{label}: «{value}» уже есть в списке")
-            return
-
-        # added
-        refresh_combo(cb, file_path, value)
-        QMessageBox.information(self, "Добавлено", f"{label}: «{value}» добавлено в список")
-
+    # ---------- add items ----------
     def add_brand(self):
-        self._add_item_with_feedback("Бренд", self.cb_brand, self.brands_file)
+        v = self.cb_brand.currentText().strip()
+        if save_item(self.brands_file, v):
+            refresh_combo(self.cb_brand, self.brands_file, v)
 
     def add_shape(self):
-        self._add_item_with_feedback("Форма оправы", self.cb_shape, self.shapes_file)
+        v = self.cb_shape.currentText().strip()
+        if save_item(self.shapes_file, v):
+            refresh_combo(self.cb_shape, self.shapes_file, v)
 
     def add_lens(self):
-        self._add_item_with_feedback("Линзы / особенности", self.cb_lens, self.lenses_file)
+        v = self.cb_lens.currentText().strip()
+        if save_item(self.lenses_file, v):
+            refresh_combo(self.cb_lens, self.lenses_file, v)
 
     # ---------- run ----------
     def run(self):
@@ -482,7 +487,9 @@ class MainWindow(QWidget):
 
 def main():
     app = QApplication(sys.argv)
-    app.setStyle("Fusion")  # делает QSS стабильнее
+    # Fusion делает QSS стабильнее (но даже без него кнопки-стрелки работают)
+    app.setStyle("Fusion")
+
     w = MainWindow()
     w.show()
     sys.exit(app.exec_())
