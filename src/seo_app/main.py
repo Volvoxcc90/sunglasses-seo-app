@@ -1,21 +1,17 @@
 import sys
 import os
 import json
-import subprocess
 from pathlib import Path
 
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QFileDialog,
-    QVBoxLayout, QHBoxLayout, QComboBox, QMessageBox, QProgressBar
+    QVBoxLayout, QHBoxLayout, QComboBox, QMessageBox, QProgressBar,
+    QCheckBox
 )
-from PyQt5.QtCore import Qt
 
 from seo_app.wb_fill import fill_wb_template
 
 
-# ==========================
-# Пути и файлы
-# ==========================
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 SETTINGS_FILE = DATA_DIR / "ui_settings.json"
@@ -27,9 +23,6 @@ LENSES_FILE = DATA_DIR / "lenses.txt"
 DATA_DIR.mkdir(exist_ok=True)
 
 
-# ==========================
-# Утилиты
-# ==========================
 def load_list(path: Path, defaults):
     if not path.exists():
         path.write_text("\n".join(defaults), encoding="utf-8")
@@ -42,18 +35,23 @@ def load_list(path: Path, defaults):
 
 
 def add_to_list(path: Path, value: str):
-    value = value.strip()
+    value = (value or "").strip()
     if not value:
-        return
+        return False
     items = load_list(path, [])
-    if value not in items:
-        items.append(value)
-        path.write_text("\n".join(items), encoding="utf-8")
+    if value in items:
+        return False
+    items.append(value)
+    path.write_text("\n".join(items), encoding="utf-8")
+    return True
 
 
 def load_settings():
     if SETTINGS_FILE.exists():
-        return json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+        try:
+            return json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
     return {}
 
 
@@ -62,22 +60,17 @@ def save_settings(data: dict):
 
 
 def open_folder(path: Path):
-    if sys.platform.startswith("win"):
-        os.startfile(path)
-    elif sys.platform == "darwin":
-        subprocess.call(["open", path])
-    else:
-        subprocess.call(["xdg-open", path])
+    try:
+        os.startfile(str(path))
+    except Exception:
+        QMessageBox.warning(None, "Ошибка", f"Не удалось открыть папку:\n{path}")
 
 
-# ==========================
-# GUI
-# ==========================
 class SeoApp(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Sunglasses SEO Generator")
-        self.setMinimumWidth(520)
+        self.setWindowTitle("Sunglasses SEO Generator v6")
+        self.setMinimumWidth(560)
 
         self.settings = load_settings()
 
@@ -91,31 +84,38 @@ class SeoApp(QWidget):
     def build_ui(self):
         layout = QVBoxLayout(self)
 
-        # ===== Бренд =====
-        self.brand_box = self.combo_row("Бренд", self.brands, BRANDS_FILE)
-        layout.addLayout(self.brand_box[0])
+        # --- combos with +
+        self.brand_row, self.brand_cb = self.combo_row("Бренд", self.brands, BRANDS_FILE)
+        self.shape_row, self.shape_cb = self.combo_row("Форма оправы", self.shapes, SHAPES_FILE)
+        self.lens_row, self.lens_cb = self.combo_row("Линзы", self.lenses, LENSES_FILE)
 
-        # ===== Форма =====
-        self.shape_box = self.combo_row("Форма оправы", self.shapes, SHAPES_FILE)
-        layout.addLayout(self.shape_box[0])
+        layout.addLayout(self.brand_row)
+        layout.addLayout(self.shape_row)
+        layout.addLayout(self.lens_row)
 
-        # ===== Линзы =====
-        self.lens_box = self.combo_row("Линзы", self.lenses, LENSES_FILE)
-        layout.addLayout(self.lens_box[0])
-
-        # ===== SEO уровень =====
+        # --- SEO level
+        layout.addWidget(QLabel("SEO-плотность"))
         self.seo_level = QComboBox()
         self.seo_level.addItems(["soft", "normal", "hard"])
-        layout.addWidget(QLabel("SEO-плотность"))
         layout.addWidget(self.seo_level)
 
-        # ===== Длина =====
+        # --- length
+        layout.addWidget(QLabel("Длина описания"))
         self.desc_length = QComboBox()
         self.desc_length.addItems(["short", "medium", "long"])
-        layout.addWidget(QLabel("Длина описания"))
         layout.addWidget(self.desc_length)
 
-        # ===== Кнопки =====
+        # --- style
+        layout.addWidget(QLabel("Стиль текста"))
+        self.style = QComboBox()
+        self.style.addItems(["neutral", "premium", "social"])
+        layout.addWidget(self.style)
+
+        # --- WB Safe Mode
+        self.cb_safe = QCheckBox("WB Safe Mode (убирает риск-слова: реплика/копия/люкс и т.п.)")
+        layout.addWidget(self.cb_safe)
+
+        # --- buttons
         btn_row = QHBoxLayout()
 
         open_btn = QPushButton("📂 Папка data")
@@ -131,79 +131,110 @@ class SeoApp(QWidget):
         self.progress = QProgressBar()
         layout.addWidget(self.progress)
 
-    def combo_row(self, label_text, items, file_path):
-        layout = QHBoxLayout()
-        label = QLabel(label_text)
+    def combo_row(self, label_text, items, file_path: Path):
+        row = QHBoxLayout()
+        row.addWidget(QLabel(label_text))
+
         combo = QComboBox()
         combo.setEditable(True)
         combo.addItems(items)
+        row.addWidget(combo, 1)
 
         add_btn = QPushButton("+")
-        add_btn.setFixedWidth(32)
+        add_btn.setFixedWidth(34)
 
         def add_item():
             val = combo.currentText().strip()
             if not val:
+                QMessageBox.warning(self, "Пусто", "Введи значение и нажми +")
                 return
-            add_to_list(file_path, val)
+            added = add_to_list(file_path, val)
             combo.clear()
             combo.addItems(load_list(file_path, []))
             combo.setCurrentText(val)
+            QMessageBox.information(self, "Ок", "Добавлено" if added else "Уже было в списке")
 
         add_btn.clicked.connect(add_item)
+        row.addWidget(add_btn)
 
-        layout.addWidget(label)
-        layout.addWidget(combo)
-        layout.addWidget(add_btn)
-
-        return layout, combo
+        return row, combo
 
     def restore_settings(self):
-        self.brand_box[1].setCurrentText(self.settings.get("brand", ""))
-        self.shape_box[1].setCurrentText(self.settings.get("shape", ""))
-        self.lens_box[1].setCurrentText(self.settings.get("lens", ""))
+        self.brand_cb.setCurrentText(self.settings.get("brand", ""))
+        self.shape_cb.setCurrentText(self.settings.get("shape", ""))
+        self.lens_cb.setCurrentText(self.settings.get("lens", ""))
+
         self.seo_level.setCurrentText(self.settings.get("seo_level", "normal"))
         self.desc_length.setCurrentText(self.settings.get("desc_length", "medium"))
+        self.style.setCurrentText(self.settings.get("style", "neutral"))
+
+        self.cb_safe.setChecked(bool(self.settings.get("wb_safe_mode", True)))
 
     def run_generation(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "Выбери Excel", "", "Excel (*.xlsx)")
         if not file_path:
             return
 
-        brand = self.brand_box[1].currentText()
-        shape = self.shape_box[1].currentText()
-        lens = self.lens_box[1].currentText()
+        brand = self.brand_cb.currentText().strip()
+        shape = self.shape_cb.currentText().strip()
+        lens = self.lens_cb.currentText().strip()
+
         seo = self.seo_level.currentText()
         length = self.desc_length.currentText()
+        style = self.style.currentText()
+        safe = self.cb_safe.isChecked()
 
+        # сохраняем настройки
         self.settings.update({
             "brand": brand,
             "shape": shape,
             "lens": lens,
             "seo_level": seo,
-            "desc_length": length
+            "desc_length": length,
+            "style": style,
+            "wb_safe_mode": safe
         })
         save_settings(self.settings)
 
+        self.progress.setValue(0)
+
         try:
-            out, count = fill_wb_template(
+            out, count, report_json = fill_wb_template(
                 input_xlsx=file_path,
                 brand=brand,
                 shape=shape,
                 lens_features=lens,
                 collection="Весна–Лето 2026",
+                style=style,
                 seo_level=seo,
                 desc_length=length,
+                wb_safe_mode=safe,
                 progress_callback=self.progress.setValue
             )
-            QMessageBox.information(self, "Готово", f"Создан файл:\n{out}\nКарточек: {count}")
+
+            # покажем краткий итог по отчёту
+            try:
+                rep = json.loads(Path(report_json).read_text(encoding="utf-8"))
+                labels = [r["seo"]["label"] for r in rep.get("rows", [])]
+                green = labels.count("🟢 сильная")
+                yellow = labels.count("🟡 норм")
+                red = labels.count("🔴 слабая")
+                msg = (
+                    f"Создан файл:\n{out}\n"
+                    f"Карточек: {count}\n\n"
+                    f"SEO итог: 🟢 {green} | 🟡 {yellow} | 🔴 {red}\n"
+                    f"Отчёт:\n{report_json}\n"
+                    f"(рядом будет .seo_report.txt)"
+                )
+            except Exception:
+                msg = f"Создан файл:\n{out}\nКарточек: {count}\nОтчёт:\n{report_json}"
+
+            QMessageBox.information(self, "Готово (v6)", msg)
+
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", str(e))
 
 
-# ==========================
-# RUN
-# ==========================
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     w = SeoApp()
