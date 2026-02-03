@@ -174,19 +174,24 @@ class FillWorker(QThread):
         )
 
     def run(self):
-        try:
-            sig = inspect.signature(fill_wb_template)
-allowed = sig.parameters.keys()
+    try:
+        import inspect
 
-safe_args = {k: v for k, v in self.args.items() if k in allowed}
+        # ВАЖНО: тут имя функции должно совпадать с твоим импортом
+        sig = inspect.signature(fill_wb_template)
+        allowed = sig.parameters.keys()
 
-out, count, report_json = fill_wb_template(
-    progress_callback=lambda p: self.progress.emit(int(p)),
-    **safe_args
-)
-            self.finished.emit(out, count, report_json)
-        except Exception as e:
-            self.failed.emit(str(e))
+        safe_args = {k: v for k, v in self.args.items() if k in allowed}
+
+        # безопасно добавляем прогресс, только если параметр реально есть
+        if "progress_callback" in allowed:
+            safe_args["progress_callback"] = lambda p: self.progress.emit(int(p))
+
+        out, count, report_json = fill_wb_template(**safe_args)
+        self.finished.emit(out, count, report_json)
+
+    except Exception as e:
+        self.failed.emit(str(e))
 
 
 # ==========================
