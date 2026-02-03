@@ -3,7 +3,7 @@ import os
 import json
 from pathlib import Path
 
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QStandardPaths
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QFileDialog,
     QVBoxLayout, QHBoxLayout, QComboBox, QMessageBox, QProgressBar,
@@ -14,17 +14,26 @@ from seo_app.wb_fill import fill_wb_template
 
 
 # ==========================
-# Paths
+# User data path (AppData/Roaming) — важно для EXE
 # ==========================
-BASE_DIR = Path(__file__).resolve().parent
-DATA_DIR = BASE_DIR / "data"
+APP_NAME = "Sunglasses SEO PRO"
+
+def get_appdata_dir() -> Path:
+    base = QStandardPaths.writableLocation(QStandardPaths.AppDataLocation)
+    # Обычно это .../AppData/Roaming/<AppName>
+    p = Path(base)
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+APP_DIR = get_appdata_dir()
+DATA_DIR = APP_DIR / "data"
 SETTINGS_FILE = DATA_DIR / "ui_settings.json"
 
 BRANDS_FILE = DATA_DIR / "brands.txt"
 SHAPES_FILE = DATA_DIR / "shapes.txt"
 LENSES_FILE = DATA_DIR / "lenses.txt"
 
-DATA_DIR.mkdir(exist_ok=True)
+DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ==========================
@@ -33,10 +42,10 @@ DATA_DIR.mkdir(exist_ok=True)
 def load_list(path: Path, defaults):
     if not path.exists():
         path.write_text("\n".join(defaults), encoding="utf-8")
-        return defaults
+        return list(defaults)
     items = [x.strip() for x in path.read_text(encoding="utf-8").splitlines() if x.strip()]
     if not items:
-        items = defaults
+        items = list(defaults)
         path.write_text("\n".join(items), encoding="utf-8")
     return items
 
@@ -63,7 +72,11 @@ def load_settings():
 
 
 def save_settings(data: dict):
-    SETTINGS_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    try:
+        SETTINGS_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception as e:
+        # Это должно работать в AppData, но на всякий случай
+        print("save_settings error:", e)
 
 
 def open_folder(path: Path):
@@ -74,7 +87,7 @@ def open_folder(path: Path):
 
 
 # ==========================
-# Themes (без переопределения стрелок QComboBox!)
+# Themes
 # ==========================
 THEMES = {
     "Sepia": """
@@ -82,46 +95,21 @@ THEMES = {
         QFrame#Card { background: rgba(255,255,255,0.75); border: 1px solid rgba(0,0,0,0.08); border-radius: 14px; }
         QLabel#Title { font-size: 22px; font-weight: 700; }
         QLabel#Subtitle { color: rgba(0,0,0,0.55); }
-        QComboBox, QPushButton, QProgressBar, QCheckBox {
-            border-radius: 10px;
-        }
-        QComboBox {
-            padding: 8px 10px;
-            border: 1px solid rgba(0,0,0,0.12);
-            background: rgba(255,255,255,0.85);
-        }
+        QComboBox, QPushButton, QProgressBar, QCheckBox { border-radius: 10px; }
+        QComboBox { padding: 8px 10px; border: 1px solid rgba(0,0,0,0.12); background: rgba(255,255,255,0.85); }
         QComboBox:focus { border: 1px solid rgba(124,58,237,0.55); }
-        QPushButton {
-            padding: 10px 14px;
-            border: 1px solid rgba(0,0,0,0.10);
-            background: rgba(255,255,255,0.85);
-        }
+        QPushButton { padding: 10px 14px; border: 1px solid rgba(0,0,0,0.10); background: rgba(255,255,255,0.85); }
         QPushButton:hover { background: rgba(255,255,255,1.0); }
         QPushButton#Primary {
-            border: 0;
-            color: white;
+            border: 0; color: white; font-weight: 700; padding: 12px 16px;
             background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #6d28d9, stop:1 #9333ea);
-            font-weight: 700;
-            padding: 12px 16px;
         }
         QPushButton#Primary:hover {
             background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #5b21b6, stop:1 #7e22ce);
         }
-        QPushButton#Tiny {
-            padding: 8px 10px;
-            font-weight: 700;
-            min-width: 40px;
-        }
-        QProgressBar {
-            height: 18px;
-            border: 1px solid rgba(0,0,0,0.10);
-            background: rgba(255,255,255,0.65);
-            text-align: center;
-        }
-        QProgressBar::chunk {
-            border-radius: 8px;
-            background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #6d28d9, stop:1 #9333ea);
-        }
+        QPushButton#Tiny { padding: 8px 10px; font-weight: 700; min-width: 40px; }
+        QProgressBar { height: 18px; border: 1px solid rgba(0,0,0,0.10); background: rgba(255,255,255,0.65); text-align: center; }
+        QProgressBar::chunk { border-radius: 8px; background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #6d28d9, stop:1 #9333ea); }
     """,
     "Midnight": """
         QWidget { background: #0b1020; color: #e9ecf1; font-size: 13px; }
@@ -129,36 +117,17 @@ THEMES = {
         QLabel#Title { font-size: 22px; font-weight: 700; }
         QLabel#Subtitle { color: rgba(233,236,241,0.60); }
         QComboBox, QPushButton, QProgressBar, QCheckBox { border-radius: 10px; }
-        QComboBox {
-            padding: 8px 10px;
-            border: 1px solid rgba(255,255,255,0.16);
-            background: rgba(255,255,255,0.08);
-        }
+        QComboBox { padding: 8px 10px; border: 1px solid rgba(255,255,255,0.16); background: rgba(255,255,255,0.08); }
         QComboBox:focus { border: 1px solid rgba(124,58,237,0.70); }
-        QPushButton {
-            padding: 10px 14px;
-            border: 1px solid rgba(255,255,255,0.16);
-            background: rgba(255,255,255,0.08);
-        }
+        QPushButton { padding: 10px 14px; border: 1px solid rgba(255,255,255,0.16); background: rgba(255,255,255,0.08); }
         QPushButton:hover { background: rgba(255,255,255,0.12); }
         QPushButton#Primary {
-            border: 0;
-            color: white;
+            border: 0; color: white; font-weight: 700; padding: 12px 16px;
             background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #6d28d9, stop:1 #9333ea);
-            font-weight: 700;
-            padding: 12px 16px;
         }
         QPushButton#Tiny { padding: 8px 10px; font-weight: 700; min-width: 40px; }
-        QProgressBar {
-            height: 18px;
-            border: 1px solid rgba(255,255,255,0.16);
-            background: rgba(255,255,255,0.06);
-            text-align: center;
-        }
-        QProgressBar::chunk {
-            border-radius: 8px;
-            background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #6d28d9, stop:1 #9333ea);
-        }
+        QProgressBar { height: 18px; border: 1px solid rgba(255,255,255,0.16); background: rgba(255,255,255,0.06); text-align: center; }
+        QProgressBar::chunk { border-radius: 8px; background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #6d28d9, stop:1 #9333ea); }
     """,
     "Slate": """
         QWidget { background: #eef2f7; color: #0f172a; font-size: 13px; }
@@ -169,7 +138,8 @@ THEMES = {
         QComboBox { padding: 8px 10px; border: 1px solid rgba(15,23,42,0.14); background: #ffffff; }
         QComboBox:focus { border: 1px solid rgba(124,58,237,0.55); }
         QPushButton { padding: 10px 14px; border: 1px solid rgba(15,23,42,0.14); background: #ffffff; }
-        QPushButton#Primary { border:0; color:#fff; font-weight:700; padding:12px 16px;
+        QPushButton#Primary {
+            border:0; color:#fff; font-weight:700; padding:12px 16px;
             background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #1d4ed8, stop:1 #2563eb);
         }
         QPushButton#Tiny { padding: 8px 10px; font-weight: 700; min-width: 40px; }
@@ -180,7 +150,7 @@ THEMES = {
 
 
 # ==========================
-# Worker Thread (живой прогресс)
+# Worker Thread
 # ==========================
 class FillWorker(QThread):
     progress = pyqtSignal(int)
@@ -220,7 +190,7 @@ class FillWorker(QThread):
 class SeoApp(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Sunglasses SEO PRO")
+        self.setWindowTitle(APP_NAME)
         self.setMinimumWidth(840)
 
         self.settings = load_settings()
@@ -233,6 +203,8 @@ class SeoApp(QWidget):
         self.selected_file = ""
 
         self.build_ui()
+
+        # ВАЖНО: сначала заполнить, потом восстановить значения
         self.restore_settings()
         self.apply_theme(self.theme_cb.currentText())
 
@@ -241,7 +213,7 @@ class SeoApp(QWidget):
         root.setContentsMargins(18, 18, 18, 18)
         root.setSpacing(14)
 
-        # ===== Header Card
+        # Header
         header = QFrame()
         header.setObjectName("Card")
         header_l = QVBoxLayout(header)
@@ -250,16 +222,14 @@ class SeoApp(QWidget):
 
         title_row = QHBoxLayout()
         title_row.setSpacing(10)
-
         icon = QLabel("🕶️")
         icon.setFixedWidth(28)
         icon.setAlignment(Qt.AlignVCenter)
         title_row.addWidget(icon)
 
-        title = QLabel("Sunglasses SEO PRO")
+        title = QLabel(APP_NAME)
         title.setObjectName("Title")
         title_row.addWidget(title, 1)
-
         header_l.addLayout(title_row)
 
         subtitle = QLabel("Живые SEO-описания • Выпадающие списки • Прогресс • Темы • WB Safe/Strict • AUTO-пол")
@@ -268,17 +238,15 @@ class SeoApp(QWidget):
 
         root.addWidget(header)
 
-        # ===== Top Controls Card
+        # Top card
         top = QFrame()
         top.setObjectName("Card")
         top_l = QVBoxLayout(top)
         top_l.setContentsMargins(18, 16, 18, 16)
         top_l.setSpacing(10)
 
-        # Theme row
         theme_row = QHBoxLayout()
         theme_row.setSpacing(10)
-
         theme_row.addWidget(QLabel("🎨 Тема"))
         self.theme_cb = QComboBox()
         self.theme_cb.addItems(list(THEMES.keys()))
@@ -298,7 +266,6 @@ class SeoApp(QWidget):
 
         top_l.addLayout(theme_row)
 
-        # File row
         file_row = QHBoxLayout()
         file_row.setSpacing(10)
 
@@ -311,22 +278,19 @@ class SeoApp(QWidget):
         file_row.addWidget(self.file_lbl, 1)
 
         top_l.addLayout(file_row)
-
         root.addWidget(top)
 
-        # ===== Form Card
+        # Form card
         form = QFrame()
         form.setObjectName("Card")
         form_l = QVBoxLayout(form)
         form_l.setContentsMargins(18, 16, 18, 16)
         form_l.setSpacing(10)
 
-        # Brand / Shape / Lenses (with +)
         form_l.addLayout(self.combo_row("Бренд", self.brands, BRANDS_FILE, attr_name="brand_cb"))
         form_l.addLayout(self.combo_row("Форма оправы", self.shapes, SHAPES_FILE, attr_name="shape_cb"))
         form_l.addLayout(self.combo_row("Линзы", self.lenses, LENSES_FILE, attr_name="lens_cb"))
 
-        # Collection (fixed but selectable)
         row = QHBoxLayout()
         row.setSpacing(10)
         row.addWidget(QLabel("Коллекция"))
@@ -335,7 +299,6 @@ class SeoApp(QWidget):
         row.addWidget(self.collection_cb, 1)
         form_l.addLayout(row)
 
-        # Controls rows
         grid1 = QHBoxLayout()
         grid1.setSpacing(10)
 
@@ -356,7 +319,6 @@ class SeoApp(QWidget):
 
         form_l.addLayout(grid1)
 
-        # AUTO gender + strict
         grid2 = QHBoxLayout()
         grid2.setSpacing(10)
 
@@ -375,7 +337,7 @@ class SeoApp(QWidget):
 
         root.addWidget(form)
 
-        # ===== Bottom bar: progress + button
+        # Bottom
         bottom = QFrame()
         bottom.setObjectName("Card")
         bottom_l = QHBoxLayout(bottom)
@@ -424,35 +386,53 @@ class SeoApp(QWidget):
         setattr(self, attr_name, cb)
         return row
 
-    def on_theme_changed(self, name: str):
-        self.apply_theme(name)
-        self.settings["theme"] = name
-        save_settings(self.settings)
-
-    def apply_theme(self, name: str):
-        qss = THEMES.get(name, THEMES["Sepia"])
-        self.setStyleSheet(qss)
+    # ---- settings
+    def capture_settings(self) -> dict:
+        return {
+            "theme": self.theme_cb.currentText(),
+            "brand": self.brand_cb.currentText().strip(),
+            "shape": self.shape_cb.currentText().strip(),
+            "lens": self.lens_cb.currentText().strip(),
+            "collection": self.collection_cb.currentText(),
+            "seo_level": self.seo_cb.currentText(),
+            "desc_length": self.len_cb.currentText(),
+            "style": self.style_cb.currentText(),
+            "wb_safe_mode": self.safe_cb.isChecked(),
+            "wb_strict": self.strict_cb.isChecked(),
+            "gender_mode": self.gender_cb.currentText(),
+        }
 
     def restore_settings(self):
-        # theme
-        theme = self.settings.get("theme", "Sepia")
+        s = self.settings or {}
+
+        theme = s.get("theme", "Sepia")
         if theme in THEMES:
             self.theme_cb.setCurrentText(theme)
         else:
             self.theme_cb.setCurrentText("Sepia")
 
-        self.brand_cb.setCurrentText(self.settings.get("brand", ""))
-        self.shape_cb.setCurrentText(self.settings.get("shape", ""))
-        self.lens_cb.setCurrentText(self.settings.get("lens", ""))
+        # ВАЖНО: setCurrentText работает даже если значения нет (editable=True) — это ок
+        self.brand_cb.setCurrentText(s.get("brand", ""))
+        self.shape_cb.setCurrentText(s.get("shape", ""))
+        self.lens_cb.setCurrentText(s.get("lens", ""))
 
-        self.collection_cb.setCurrentText(self.settings.get("collection", "Весна–Лето 2025–2026"))
-        self.seo_cb.setCurrentText(self.settings.get("seo_level", "normal"))
-        self.len_cb.setCurrentText(self.settings.get("desc_length", "medium"))
-        self.style_cb.setCurrentText(self.settings.get("style", "neutral"))
+        self.collection_cb.setCurrentText(s.get("collection", "Весна–Лето 2025–2026"))
+        self.seo_cb.setCurrentText(s.get("seo_level", "normal"))
+        self.len_cb.setCurrentText(s.get("desc_length", "medium"))
+        self.style_cb.setCurrentText(s.get("style", "neutral"))
 
-        self.safe_cb.setChecked(bool(self.settings.get("wb_safe_mode", True)))
-        self.strict_cb.setChecked(bool(self.settings.get("wb_strict", True)))
-        self.gender_cb.setCurrentText(self.settings.get("gender_mode", "Auto"))
+        self.safe_cb.setChecked(bool(s.get("wb_safe_mode", True)))
+        self.strict_cb.setChecked(bool(s.get("wb_strict", True)))
+        self.gender_cb.setCurrentText(s.get("gender_mode", "Auto"))
+
+    def on_theme_changed(self, name: str):
+        self.apply_theme(name)
+        self.settings = self.capture_settings()
+        save_settings(self.settings)
+
+    def apply_theme(self, name: str):
+        qss = THEMES.get(name, THEMES["Sepia"])
+        self.setStyleSheet(qss)
 
     def pick_file(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "Выбери Excel", "", "Excel (*.xlsx)")
@@ -470,32 +450,20 @@ class SeoApp(QWidget):
             QMessageBox.warning(self, "Файл", "Сначала выбери XLSX.")
             return
 
-        brand = self.brand_cb.currentText().strip()
-        shape = self.shape_cb.currentText().strip()
-        lens = self.lens_cb.currentText().strip()
-
-        collection = self.collection_cb.currentText().strip()
-        seo = self.seo_cb.currentText()
-        length = self.len_cb.currentText()
-        style = self.style_cb.currentText()
-        safe = self.safe_cb.isChecked()
-        strict = self.strict_cb.isChecked()
-        gender_mode = self.gender_cb.currentText()
-
-        # save settings
-        self.settings.update({
-            "brand": brand,
-            "shape": shape,
-            "lens": lens,
-            "collection": collection,
-            "seo_level": seo,
-            "desc_length": length,
-            "style": style,
-            "wb_safe_mode": safe,
-            "wb_strict": strict,
-            "gender_mode": gender_mode,
-        })
+        # сохраняем настройки сразу
+        self.settings = self.capture_settings()
         save_settings(self.settings)
+
+        brand = self.settings["brand"]
+        shape = self.settings["shape"]
+        lens = self.settings["lens"]
+        collection = self.settings["collection"]
+        seo = self.settings["seo_level"]
+        length = self.settings["desc_length"]
+        style = self.settings["style"]
+        safe = self.settings["wb_safe_mode"]
+        strict = self.settings["wb_strict"]
+        gender_mode = self.settings["gender_mode"]
 
         self.progress.setValue(0)
         self.set_busy(True)
@@ -520,17 +488,30 @@ class SeoApp(QWidget):
 
     def on_done(self, out_path: str, count: int, report_json: str):
         self.set_busy(False)
-        # мини-итог по отчёту
-        msg = f"Создан файл:\n{out_path}\nКарточек: {count}\n\nОтчёт:\n{report_json}\n(рядом будет .seo_report.txt)"
-        QMessageBox.information(self, "Готово", msg)
+        QMessageBox.information(
+            self,
+            "Готово",
+            f"Создан файл:\n{out_path}\nКарточек: {count}\n\nОтчёт:\n{report_json}\n(рядом будет .seo_report.txt)"
+        )
 
     def on_fail(self, err: str):
         self.set_busy(False)
         QMessageBox.critical(self, "Ошибка", err)
 
+    def closeEvent(self, event):
+        # сохраняем при закрытии тоже
+        try:
+            self.settings = self.capture_settings()
+            save_settings(self.settings)
+        except Exception:
+            pass
+        super().closeEvent(event)
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    # Чтобы AppData путь был стабилен и “красивый”
+    app.setApplicationName(APP_NAME)
     w = SeoApp()
     w.show()
     sys.exit(app.exec())
