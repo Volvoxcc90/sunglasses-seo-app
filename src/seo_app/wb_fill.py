@@ -98,10 +98,7 @@ STRICT_DROP_PATTERNS = [
 
 
 # ==========================
-# Бренды: ВАЖНО
-# 1) если бренд уже кириллицей — оставляем
-# 2) если латиницей — переводим ТОЛЬКО если есть в словаре
-# 3) если нет в словаре — оставляем латиницу (не портим)
+# Бренд-словарь (кириллица ТОЛЬКО для названия)
 # ==========================
 BRAND_RU_OVERRIDES = {
     "gucci": "Гуччи",
@@ -125,7 +122,6 @@ BRAND_RU_OVERRIDES = {
     "tom ford": "Том Форд",
     "gentle monster": "Джентл Монстер",
     "polaroid": "Полароид",
-    "hugoboss": "Хьюго Босс",
     "hugo boss": "Хьюго Босс",
 }
 
@@ -146,28 +142,23 @@ def _contains_cyrillic(s: str) -> bool:
     return bool(re.search(r"[А-Яа-яЁё]", s or ""))
 
 
-def brand_display_name(brand: str) -> str:
-    """Возвращает бренд для названия: кириллица если известный, иначе как ввели."""
-    brand = _norm(brand)
-    if not brand:
+def brand_title_cyrillic_only(brand_raw: str) -> str:
+    """
+    Для НАИМЕНОВАНИЯ:
+    - если бренд уже кириллицей -> оставляем
+    - если латиницей -> переводим ТОЛЬКО если в словаре
+    - иначе оставляем латиницу (чтобы не было “кривого бренда”)
+    """
+    b = _norm(brand_raw)
+    if not b:
         return ""
-    if _contains_cyrillic(brand):
-        return brand
-
-    key = brand.lower().replace("&", " ").replace("-", " ").strip()
+    if _contains_cyrillic(b):
+        return b
+    key = b.lower().replace("&", " ").replace("-", " ").strip()
     key = re.sub(r"\s+", " ", key)
-
-    # сначала пробуем как есть, потом с дефисом/пробелом
     if key in BRAND_RU_OVERRIDES:
         return BRAND_RU_OVERRIDES[key]
-
-    # ещё пробуем исходник без "лишнего"
-    key2 = key.replace("  ", " ").strip()
-    if key2 in BRAND_RU_OVERRIDES:
-        return BRAND_RU_OVERRIDES[key2]
-
-    # НЕ транслитерируем — оставляем латиницу, чтобы не было “кривого бренда”
-    return brand
+    return b
 
 
 def _sun_term() -> str:
@@ -229,8 +220,8 @@ def _clamp_modes(style: str, seo_level: str, desc_length: str) -> Tuple[str, str
     return style, seo_level, desc_length
 
 
-def build_titles_6(brand: str, shape: str, lens: str) -> List[str]:
-    brand_show = brand_display_name(brand)
+def build_titles_6(brand_raw: str, shape: str, lens: str) -> List[str]:
+    brand_title = brand_title_cyrillic_only(brand_raw)   # <- кириллица/словарь только тут
     shape = _norm(shape)
     lens = _norm(lens)
 
@@ -254,7 +245,7 @@ def build_titles_6(brand: str, shape: str, lens: str) -> List[str]:
         slogan = local_slogans[i]
         core = _sun_term()
 
-        brand_part = (brand_show + " ") if (flags[i] and brand_show) else ""
+        brand_part = (brand_title + " ") if (flags[i] and brand_title) else ""
         shape_part = (shape + " ") if (shape and random.random() < 0.55) else ""
         lens_part = (lens + " ") if (lens and random.random() < 0.70) else ""
 
@@ -316,9 +307,6 @@ def _lens_fact(lens: str) -> str:
     return ""
 
 
-# ==========================
-# AUTO-пол
-# ==========================
 def infer_gender_mode(shape: str, lens: str) -> str:
     s = (shape or "").lower()
     l = (lens or "").lower()
@@ -451,7 +439,7 @@ def template_penalty(text: str) -> int:
 
 
 def generate_description_one(
-    brand: str,
+    brand_raw: str,          # <- ЛАТИНИЦА/как ввели
     shape: str,
     lens: str,
     collection: str,
@@ -464,7 +452,9 @@ def generate_description_one(
     wb_strict: bool,
     gender_mode: str,
 ) -> str:
-    brand = _norm(brand)
+    # бренд в описании — строго как ввели (латиницей если выбрали так)
+    brand_desc = _norm(brand_raw)
+
     shape = _norm(shape)
     lens = _norm(lens)
     collection = _norm(collection)
@@ -483,11 +473,11 @@ def generate_description_one(
         g_text = gender_phrase(gmode)
 
     openers = []
-    if brand:
+    if brand_desc:
         openers += [
-            f"{brand} — аксессуар, который делает образ собраннее и помогает чувствовать себя комфортно в солнечный день.",
-            f"Очки {brand} добавляют уверенности: выглядят актуально и уместно, когда нужен летний акцент без перегруза.",
-            f"Когда хочется подчеркнуть стиль — {brand} дают заметный эффект и при этом остаются удобными в повседневности.",
+            f"{brand_desc} — аксессуар, который делает образ собраннее и помогает чувствовать себя комфортно в солнечный день.",
+            f"Очки {brand_desc} добавляют уверенности: выглядят актуально и уместно, когда нужен летний акцент без перегруза.",
+            f"Когда хочется подчеркнуть стиль — {brand_desc} дают заметный эффект и при этом остаются удобными в повседневности.",
         ]
     else:
         openers += [
@@ -694,10 +684,11 @@ def fill_wb_template(
     done = 0
 
     report: Dict[str, Any] = {
-        "version": "v8-brand-fix",
+        "version": "v9-brand-rule",
+        "brand_rule": "title=cyrillic(if known); description=raw",
         "input_file": str(input_xlsx),
         "settings": {
-            "brand": brand,
+            "brand_raw": brand,
             "shape": shape,
             "lens": lens_features,
             "collection": collection,
@@ -725,7 +716,7 @@ def fill_wb_template(
 
         candidates = [
             generate_description_one(
-                brand=brand,
+                brand_raw=brand,  # <- описание получает raw
                 shape=shape,
                 lens=lens_features,
                 collection=collection,
@@ -768,19 +759,5 @@ def fill_wb_template(
     report_json = out.with_suffix(".seo_report.json")
     report_txt = out.with_suffix(".seo_report.txt")
     report_json.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-
-    labels = [row["picked"]["seo"]["label"] for row in report["rows"]]
-    green = labels.count("🟢 сильная")
-    yellow = labels.count("🟡 норм")
-    red = labels.count("🔴 слабая")
-
-    lines = []
-    lines.append("SEO REPORT")
-    lines.append(f"Файл: {out.name}")
-    lines.append(f"Safe: {'ON' if wb_safe_mode else 'OFF'} | Strict: {'ON' if wb_strict else 'OFF'} | Gender: {gender_mode}")
-    lines.append(f"SEO: {seo_level} | Length: {desc_length} | Style: {style}")
-    lines.append("")
-    lines.append(f"Итог: 🟢 {green} | 🟡 {yellow} | 🔴 {red}")
-    report_txt.write_text("\n".join(lines), encoding="utf-8")
 
     return str(out), done, str(report_json)
