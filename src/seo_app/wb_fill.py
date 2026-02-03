@@ -2,10 +2,14 @@
 import random
 import time
 import json
+import re
 from pathlib import Path
-from copy import deepcopy
 
 from openpyxl import load_workbook
+
+
+TITLE_MAX = 60
+DESC_MAX = 2000
 
 
 # -------------------------------
@@ -13,22 +17,50 @@ from openpyxl import load_workbook
 # -------------------------------
 
 def _seed():
-    # Гарантируем уникальный рандом КАЖДЫЙ запуск
     random.seed(time.time_ns())
 
 
-def _choice(seq):
-    return random.choice(seq)
+def _norm(s: str) -> str:
+    s = "" if s is None else str(s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
 
 
-def _shuffle(seq):
-    seq = list(seq)
-    random.shuffle(seq)
-    return seq
+def _cut_no_word_break(text: str, max_len: int) -> str:
+    text = _norm(text)
+    if len(text) <= max_len:
+        return text
+    cut = text[:max_len]
+    # не режем слово
+    if " " in cut:
+        cut = cut.rsplit(" ", 1)[0]
+    return cut.strip() if cut else text[:max_len].strip()
+
+
+def _find_header_row_and_cols(ws, max_scan_rows=20):
+    """
+    Ищем строку заголовков в первых max_scan_rows строках.
+    Возвращаем: (header_row, col_name, col_desc)
+    """
+    for r in range(1, min(max_scan_rows, ws.max_row) + 1):
+        name_col = None
+        desc_col = None
+        for c in range(1, ws.max_column + 1):
+            v = ws.cell(r, c).value
+            if not isinstance(v, str):
+                continue
+            lv = v.strip().lower()
+            if "наимен" in lv:      # Наименование / Наимен / Наименование товара
+                name_col = c
+            if "описан" in lv:      # Описание
+                desc_col = c
+        if name_col and desc_col:
+            return r, name_col, desc_col
+    raise ValueError("Не найдены колонки 'Наименование' и/или 'Описание' (проверил первые 20 строк).")
 
 
 # -------------------------------
-# СЛОВАРИ / БАЗА
+# СЛОВАРИ
 # -------------------------------
 
 SLOGANS = [
@@ -41,114 +73,111 @@ SLOGANS = [
     "С характером", "Смелые", "Лёгкие", "Статусные"
 ]
 
+INTRO = [
+    "Лёгкий акцент на тёплый сезон: модель подчёркивает стиль и помогает чувствовать себя комфортно при ярком солнце.",
+    "Аксессуар, который сразу делает образ собраннее: уместно и в городе, и в поездках.",
+    "Очки выглядят актуально и легко сочетаются с повседневной одеждой и летними образами.",
+    "Вариант на каждый день: комфортная посадка и выразительная геометрия оправы без перегруза.",
+    "Хорошо читаются в образе: добавляют уверенности и завершают стиль."
+]
+
+ENDS = [
+    "Подойдут для города, отдыха и поездок — удобно, стильно и практично.",
+    "Уместны в повседневной носке и в отпуске: образ становится более выразительным.",
+    "Легко сочетаются с базовым гардеробом и летними луками.",
+    "Хороший выбор, когда нужны и стиль, и комфорт на весь день.",
+]
+
 SCENARIOS = [
-    "городские прогулки",
-    "отпуск и путешествия",
-    "пляж и активный отдых",
-    "повседневные образы",
-    "вождение",
-    "город и поездки",
-]
-
-INTRO_PHRASES = [
-    "Эти очки легко вписываются в современные образы и подчёркивают стиль.",
-    "Модель создана для тех, кто ценит комфорт и выразительный дизайн.",
-    "Очки выглядят актуально и гармонично дополняют летний гардероб.",
-    "Аксессуар, который делает образ завершённым и уверенным.",
-    "Идеальный вариант для яркого солнца и активного дня.",
-]
-
-STYLE_ENDINGS = [
-    "Подходят для повседневной носки и отдыха.",
-    "Сочетаются с городским и курортным стилем.",
-    "Удобны в течение всего дня.",
-    "Станут заметным акцентом образа.",
-    "Хорошо смотрятся в динамичном ритме города.",
+    "город", "прогулки", "отпуск", "пляж", "путешествия", "вождение", "поездки", "активный отдых"
 ]
 
 SEO_KEYS = [
-    "солнцезащитные очки",
-    "солнечные очки",
-    "брендовые очки",
-    "очки для города",
-    "очки для лета",
-    "модные очки",
-    "очки UV400",
+    "солнцезащитные очки", "солнечные очки", "очки солнцезащитные", "брендовые очки",
+    "модные очки", "очки для города", "очки для вождения", "аксессуар на лето"
 ]
 
 
 # -------------------------------
-# ГЕНЕРАЦИЯ ТЕКСТОВ
+# ГЕНЕРАЦИЯ
 # -------------------------------
 
-def generate_title(brand, shape, lens):
-    """
-    Бренд — РАНДОМНО:
-    • в ~50% случаев есть
-    • в ~50% отсутствует
-    Бренд — ВСЕГДА на кириллице
-    """
-    slogan = _choice(SLOGANS)
-    base = f"{slogan} солнцезащитные очки"
+def _sun_term():
+    return random.choice(["солнцезащитные очки", "солнечные очки"])
 
-    parts = [base]
 
-    if random.random() < 0.5 and brand:
+def generate_title(brand: str, shape: str, lens: str) -> str:
+    brand = _norm(brand)
+    shape = _norm(shape)
+    lens = _norm(lens)
+
+    slogan = random.choice(SLOGANS)
+    core = _sun_term()
+
+    # бренд рандомно: в половине есть, в половине нет
+    include_brand = (random.random() < 0.5)
+
+    parts = [slogan, core]
+
+    if include_brand and brand:
         parts.append(brand)
 
-    if lens:
+    # линзы чаще показываем, форма реже
+    if lens and random.random() < 0.75:
         parts.append(lens)
 
-    if shape and random.random() < 0.5:
+    if shape and random.random() < 0.55:
         parts.append(shape.lower())
 
     title = " ".join(parts)
-    return title[:60].rstrip()
+    return _cut_no_word_break(title, TITLE_MAX)
 
 
-def generate_description(brand, shape, lens, collection, style):
+def generate_description(brand: str, shape: str, lens: str, collection: str, style: str) -> str:
+    brand = _norm(brand)
+    shape = _norm(shape)
+    lens = _norm(lens)
+    collection = _norm(collection)
+    style = (_norm(style) or "neutral").lower()
+
     blocks = []
+    blocks.append(random.choice(INTRO))
 
-    blocks.append(_choice(INTRO_PHRASES))
+    # бренд/коллекция
+    if brand and collection:
+        blocks.append(f"{brand} — заметный акцент сезона {collection}: модель выглядит актуально и легко вписывается в разные стили.")
+    elif brand:
+        blocks.append(f"{brand} — стильный аксессуар, который подчёркивает индивидуальность и добавляет образу уверенности.")
+    elif collection:
+        blocks.append(f"Актуально на сезон {collection}: лёгкий аксессуар, который дополняет образ и делает его более выразительным.")
 
-    if brand:
-        blocks.append(
-            f"Очки {brand} отличаются продуманным дизайном и вниманием к деталям, "
-            f"что делает модель актуальной в сезоне {collection}."
-        )
-
+    # форма
     if shape:
-        blocks.append(
-            f"Форма оправы {shape.lower()} подчёркивает черты лица и смотрится уместно "
-            f"как в повседневных, так и в более выразительных образах."
-        )
+        blocks.append(f"Форма оправы {shape.lower()} подчёркивает черты лица и помогает сбалансировать образ — от повседневного до более смелого.")
 
+    # линзы
     if lens:
-        blocks.append(
-            f"Линзы {lens} обеспечивают защиту от яркого солнца и комфорт "
-            f"при длительном использовании."
-        )
+        blocks.append(f"Линзы {lens} подходят для яркого солнца и помогают чувствовать себя комфортнее в течение дня — особенно в городе и в поездках.")
 
-    blocks.append(
-        f"Очки подойдут для таких сценариев, как {_choice(SCENARIOS)}, "
-        f"и легко адаптируются под разные стили."
-    )
+    # сценарии (без слова “Сценарии:”)
+    sc = ", ".join(random.sample(SCENARIOS, k=4))
+    blocks.append(f"Подходит для ситуаций: {sc}.")
 
-    blocks.append(_choice(STYLE_ENDINGS))
+    blocks.append(random.choice(ENDS))
 
-    # SEO — мягко, внутри текста
-    seo_mix = _shuffle(SEO_KEYS)[:3]
-    blocks.append(" ".join(seo_mix) + ".")
+    # SEO внутри текста (без “SEO:”)
+    seo = ", ".join(random.sample(SEO_KEYS, k=3))
+    blocks.append(f"Поисковые запросы, по которым часто ищут: {seo}.")
 
     text = " ".join(blocks)
 
-    # Немного стилистики
+    # стили
     if style == "premium":
-        text = text.replace("очки", "аксессуар").replace("модель", "изделие")
+        text = text.replace("аксессуар", "премиальный аксессуар").replace("стильный", "премиальный")
     elif style == "social":
-        text += " Отличный вариант для фото и социальных сетей."
+        text += " Смотрится эффектно в кадре — хороший вариант для фото и соцсетей."
 
-    return text
+    return _cut_no_word_break(text, DESC_MAX)
 
 
 # -------------------------------
@@ -168,54 +197,70 @@ def fill_wb_template(
     progress_callback=None,
 ):
     """
-    ВОЗВРАЩАЕТ СТРОГО:
+    Возвращает строго 3 значения:
     (out_xlsx_path, rows_count, report_json)
     """
-
     _seed()
 
     wb = load_workbook(input_xlsx)
     ws = wb.active
 
-    title_col = None
-    desc_col = None
+    header_row, col_name, col_desc = _find_header_row_and_cols(ws, max_scan_rows=20)
 
-    # ищем колонки
-    for col in range(1, ws.max_column + 1):
-        header = str(ws.cell(row=1, column=col).value).lower()
-        if "наимен" in header:
-            title_col = col
-        if "описан" in header:
-            desc_col = col
-
-    if not title_col or not desc_col:
-        raise ValueError("Не найдены колонки 'Наименование' и/или 'Описание'")
+    start_row = header_row + 1
+    end_row = ws.max_row
 
     rows_filled = 0
+    seen_titles = set()
+    seen_desc_starts = set()
 
-    for row in range(2, ws.max_row + 1):
-        title = generate_title(brand, shape, lens_features)
-        desc = generate_description(brand, shape, lens_features, collection, style)
+    total = max(1, end_row - start_row + 1)
 
-        ws.cell(row=row, column=title_col).value = title
-        ws.cell(row=row, column=desc_col).value = desc
+    for i, r in enumerate(range(start_row, end_row + 1), start=1):
+        # генерируем без дублей (несколько попыток)
+        title = ""
+        for _ in range(12):
+            t = generate_title(brand, shape, lens_features)
+            if t not in seen_titles:
+                title = t
+                break
+        if not title:
+            title = generate_title(brand, shape, lens_features)
+        seen_titles.add(title)
+
+        desc = ""
+        for _ in range(12):
+            d = generate_description(brand, shape, lens_features, collection, style)
+            start7 = " ".join(d.split()[:7]).lower()
+            if start7 not in seen_desc_starts:
+                desc = d
+                seen_desc_starts.add(start7)
+                break
+        if not desc:
+            desc = generate_description(brand, shape, lens_features, collection, style)
+
+        # перезаписываем наименование/описание
+        ws.cell(r, col_name).value = title
+        ws.cell(r, col_desc).value = desc
 
         rows_filled += 1
 
         if progress_callback:
-            progress_callback((row - 1) / (ws.max_row - 1) * 100)
+            progress_callback(int(i * 100 / total))
 
-    out_path = Path(input_xlsx).with_name(
-        Path(input_xlsx).stem + "_SEO.xlsx"
-    )
-
+    out_path = Path(input_xlsx).with_name(Path(input_xlsx).stem + "_SEO.xlsx")
     wb.save(out_path)
 
     report = {
-        "rows": rows_filled,
+        "rows_filled": rows_filled,
+        "header_row": header_row,
+        "name_col": col_name,
+        "desc_col": col_desc,
         "brand": brand,
-        "style": style,
+        "shape": shape,
+        "lens": lens_features,
         "collection": collection,
+        "style": style
     }
 
-    return str(out_path), rows_filled, json.dumps(report, ensure_ascii=False)
+    return str(out_path), rows_filled, json.dumps(report, ensure_ascii=False, indent=2)
