@@ -37,12 +37,6 @@ SLOGANS = [
     "Топовые", "Сочные", "Кайфовые", "Чёткие"
 ]
 
-SCENARIOS = [
-    "город", "прогулки", "отпуск", "пляж", "путешествия",
-    "вождение", "активный отдых", "повседневные дела",
-    "кафе и встречи", "поездки", "выходные"
-]
-
 SEO_CORE = [
     "солнцезащитные очки", "солнечные очки", "очки солнцезащитные",
     "брендовые очки", "модные очки"
@@ -59,16 +53,17 @@ SEO_FEATURES = [
     "зеркальные линзы", "градиентные линзы"
 ]
 
+# Матрица смыслов по партии
 SEMANTIC_MATRIX = [
-    {"focus": "Город/повседневка",   "must_tail": ["очки для города"],                     "add": ["брендовые очки"]},
-    {"focus": "Вождение",            "must_tail": ["очки для вождения"],                   "add": ["очки солнцезащитные"]},
+    {"focus": "Город/повседневка",   "must_tail": ["очки для города"],                          "add": ["брендовые очки"]},
+    {"focus": "Вождение",            "must_tail": ["очки для вождения"],                        "add": ["очки солнцезащитные"]},
     {"focus": "Отпуск/путешествия",  "must_tail": ["очки для отпуска", "очки для путешествий"], "add": ["аксессуар на лето"]},
-    {"focus": "Стиль/соцсети",       "must_tail": ["инста очки", "очки из tiktok"],       "add": ["модные очки"]},
-    {"focus": "Универсальность",     "must_tail": ["очки унисекс"],                        "add": ["солнечные очки"]},
-    {"focus": "Охват/ядро",          "must_tail": ["аксессуар на лето"],                   "add": ["очки солнцезащитные"]},
+    {"focus": "Стиль/соцсети",       "must_tail": ["инста очки", "очки из tiktok"],             "add": ["модные очки"]},
+    {"focus": "Универсальность",     "must_tail": ["очки унисекс"],                             "add": ["солнечные очки"]},
+    {"focus": "Охват/ядро",          "must_tail": ["аксессуар на лето"],                        "add": ["очки солнцезащитные"]},
 ]
 
-# --- базовый safe mode (как было)
+# WB safe mode
 WB_SAFE_REPLACEMENTS = [
     (r"\bреплика\b", "стилизация"),
     (r"\bреплики\b", "стилизации"),
@@ -80,31 +75,23 @@ WB_SAFE_REPLACEMENTS = [
     (r"\breplica\b", "style"),
 ]
 
-# --- v7.1: STRICT фильтр (санкции/стоп-фразы/обещания)
-# Задача: убрать категоричность, медицинские/гарантийные обещания, “100%”, “лучший”, “оригинал” и т.п.
+# WB strict: убираем обещания/абсолюты/опасные слова
 STRICT_REWRITE = [
-    # абсолюты/гарантии
     (r"\b100%\b", "высокая"),
     (r"\bгарант(ия|ируем|ирует|ировано)\b", "обычно обеспечивает"),
     (r"\bлучши(й|е|ая|ие)\b", "отличный"),
     (r"\bидеальн(ый|ая|ое|ые)\b", "удачный"),
     (r"\bбезупречн(ый|ая|ое|ые)\b", "аккуратный"),
     (r"\bабсолютн(о|ый|ая|ое|ые)\b", "очень"),
-    # “оригинал/копия/реплика” — уже safe, но усилим
     (r"\bоригинал(ьные|ьный|ьная|ьное)?\b", "фирменные"),
     (r"\bкак оригинал\b", "в стиле"),
-    # мед. обещания / здоровье
     (r"\bлеч(ит|ат|ение)\b", "помогает чувствовать себя комфортнее"),
     (r"\bулучш(ает|ить)\s+зрение\b", "делает картинку более комфортной"),
     (r"\bснима(ет|ть)\s+усталост(ь|и)\b", "может снижать дискомфорт"),
     (r"\bзащищает\s+на\s+100%\b", "помогает защищать"),
-    # токсичные кликбейты
     (r"\bтоп\s*1\b", "популярный выбор"),
     (r"\bномер\s*1\b", "популярный выбор"),
-    (r"\bсам(ый|ая|ое|ые)\s+трендов(ый|ая|ое|ые)\b", "актуальный"),
 ]
-
-# что вырезаем целиком в strict (лучше удалить, чем рисковать)
 STRICT_DROP_PATTERNS = [
     r"\bподлинн(ый|ая|ое|ые)\b",
     r"\bсертифицир(ован|ованн|овано)\w*\b",
@@ -125,10 +112,6 @@ def _cut_no_word_break(text: str, max_len: int) -> str:
     return cut.strip() if cut else text[:max_len].strip()
 
 
-def _contains_cyrillic(s: str) -> bool:
-    return bool(re.search(r"[А-Яа-яЁё]", s or ""))
-
-
 def _sun_term() -> str:
     return random.choice(["солнцезащитные очки", "солнечные очки"])
 
@@ -145,25 +128,19 @@ def _apply_wb_safe(text: str) -> str:
     t = text
     for pattern, repl in WB_SAFE_REPLACEMENTS:
         t = re.sub(pattern, repl, t, flags=re.IGNORECASE)
-    t = re.sub(r"\s{2,}", " ", t).strip()
-    return t
+    return re.sub(r"\s{2,}", " ", t).strip()
 
 
 def _apply_wb_strict(text: str) -> str:
     t = text
-    # drop
     for pat in STRICT_DROP_PATTERNS:
         t = re.sub(pat, "", t, flags=re.IGNORECASE)
-    # rewrite
     for pat, repl in STRICT_REWRITE:
         t = re.sub(pat, repl, t, flags=re.IGNORECASE)
-    # чистка
     t = re.sub(r"\s{2,}", " ", t).strip()
-    # убираем "дырки" от удалений
     t = re.sub(r"\s+,", ",", t)
     t = re.sub(r"\(\s*\)", "", t)
-    t = re.sub(r"\s{2,}", " ", t).strip()
-    return t
+    return re.sub(r"\s{2,}", " ", t).strip()
 
 
 def _first_n_words(text: str, n: int = 7) -> str:
@@ -195,22 +172,12 @@ def _clamp_modes(style: str, seo_level: str, desc_length: str) -> Tuple[str, str
     return style, seo_level, desc_length
 
 
+# --- Бренд -> кириллица (в названии)
 BRAND_RU_OVERRIDES = {
-    "gucci": "Гуччи",
-    "dior": "Диор",
-    "prada": "Прада",
-    "ray-ban": "Рэй-Бэн",
-    "ray ban": "Рэй-Бэн",
-    "cazal": "Казал",
-    "versace": "Версаче",
-    "chanel": "Шанель",
-    "cartier": "Картье",
-    "oakley": "Окли",
-    "dolce gabbana": "Дольче Габбана",
-    "dolce & gabbana": "Дольче Габбана",
-    "armani": "Армани",
+    "gucci": "Гуччи", "dior": "Диор", "prada": "Прада", "cazal": "Казал",
+    "ray-ban": "Рэй-Бэн", "ray ban": "Рэй-Бэн", "versace": "Версаче",
+    "chanel": "Шанель", "cartier": "Картье", "oakley": "Окли",
     "burberry": "Бёрберри",
-    "balenciaga": "Баленсиага",
 }
 
 TRANSLIT_MAP = [
@@ -227,14 +194,12 @@ def brand_to_cyrillic(brand: str) -> str:
     brand = _norm(brand)
     if not brand:
         return ""
-    if _contains_cyrillic(brand):
+    if re.search(r"[А-Яа-яЁё]", brand):
         return brand
-
     key = brand.lower().replace("&", " ").replace("-", " ").strip()
     key = re.sub(r"\s+", " ", key)
     if key in BRAND_RU_OVERRIDES:
         return BRAND_RU_OVERRIDES[key]
-
     b = key
     for latin, ru in TRANSLIT_MAP:
         b = b.replace(latin, ru)
@@ -259,8 +224,7 @@ def build_titles_6(brand: str, shape: str, lens: str) -> List[str]:
     ]
 
     local_slogans = random.sample(SLOGANS, k=6) if len(SLOGANS) >= 6 else [random.choice(SLOGANS) for _ in range(6)]
-    used = set()
-    out = []
+    used, out = set(), []
 
     for i in range(6):
         slogan = local_slogans[i]
@@ -270,13 +234,7 @@ def build_titles_6(brand: str, shape: str, lens: str) -> List[str]:
         shape_part = (shape + " ") if (shape and random.random() < 0.55) else ""
         lens_part = (lens + " ") if (lens and random.random() < 0.70) else ""
 
-        raw = templates[i].format(
-            slogan=slogan,
-            core=core,
-            brand=brand_part,
-            shape=shape_part,
-            lens=lens_part
-        )
+        raw = templates[i].format(slogan=slogan, core=core, brand=brand_part, shape=shape_part, lens=lens_part)
         title = _cut_no_word_break(raw, TITLE_MAX_LEN)
 
         tries = 0
@@ -319,17 +277,57 @@ def _lens_fact(lens: str) -> str:
     if "uv400" in l:
         return random.choice([
             "UV400 часто выбирают для комфорта в солнечную погоду: меньше хочется щуриться, глаза устают меньше.",
-            "Защита UV400 — популярный ориентир, когда нужно комфортно носить очки и в городе, и в поездках.",
+            "Защита UV400 — удобный ориентир, когда нужно комфортно носить очки и в городе, и в поездках.",
         ])
     if "поляр" in l:
         return random.choice([
             "Поляризация помогает уменьшить блики от асфальта, воды и стекла — особенно заметно в дороге и на открытых пространствах.",
-            "Поляризационный эффект делает картинку более читаемой при ярком свете и может снижать дискомфорт для глаз.",
+            "Поляризационный эффект делает картинку более читаемой при ярком свете и может снижать дискомфорт.",
         ])
     if "фото" in l or "хамеле" in l:
         return random.choice([
             "Фотохромный эффект удобен, когда освещение меняется: на улице темнее, в помещении спокойнее.",
             "Фотохромные линзы подходят тем, кто часто выходит из помещения на улицу и обратно.",
+        ])
+    return ""
+
+
+# ==========================
+# AUTO-пол
+# ==========================
+def infer_gender_mode(shape: str, lens: str) -> str:
+    s = (shape or "").lower()
+    l = (lens or "").lower()
+    if "кошач" in s or "cat" in s:
+        return "Жен"
+    if "авиатор" in s or "pilot" in s:
+        return "Унисекс"
+    if "оверсайз" in s:
+        return "Жен"
+    if "спорт" in s or "oakley" in l:
+        return "Муж"
+    return "Унисекс"
+
+
+def gender_phrase(gender_mode: str, slot_focus: str) -> str:
+    # аккуратно, чтобы не выглядело шаблоном (и не на каждую карточку)
+    g = (gender_mode or "Auto").strip()
+    if g == "Auto":
+        return ""  # в Auto подставим позже после инференса
+    if g == "Жен":
+        return random.choice([
+            "Подходит для женских образов — от повседневных до более выразительных.",
+            "Акцентная модель для женского гардероба: смотрится современно и легко сочетается.",
+        ])
+    if g == "Муж":
+        return random.choice([
+            "Хороший вариант для мужского гардероба: уместно в городе и в поездках.",
+            "Для мужских образов — практично, аккуратно и без лишней вычурности.",
+        ])
+    if g == "Унисекс":
+        return random.choice([
+            "Унисекс-посадка: легко вписывается в разные стили и сочетания.",
+            "Унисекс-формат: подходит под разные образы и сценарии.",
         ])
     return ""
 
@@ -443,6 +441,7 @@ def generate_description_one(
     recent_desc_starts: List[str],
     wb_safe_mode: bool,
     wb_strict: bool,
+    gender_mode: str,
 ) -> str:
     brand = _norm(brand)
     shape = _norm(shape)
@@ -453,6 +452,16 @@ def generate_description_one(
     min_len, max_len = DESC_LENGTH_RANGES[desc_length]
     kw = _choose_keywords(lens, seo_level, slot)
     scen_txt = _scenario_text_by_slot(slot)
+
+    # AUTO-пол (инференс)
+    gmode = (gender_mode or "Auto").strip()
+    if gmode == "Auto":
+        gmode = infer_gender_mode(shape, lens)
+
+    # гендер-фраза — не в каждую карточку, чтобы не пахло шаблоном
+    g_text = ""
+    if random.random() < 0.65:
+        g_text = gender_phrase(gmode, slot.get("focus", ""))
 
     openers = []
     if brand:
@@ -469,19 +478,16 @@ def generate_description_one(
     opener = random.choice(openers)
 
     design = random.choice([
-        f"Дизайн с {shape.lower()} линиями подчёркивает черты лица и делает образ более выразительным."
-        if shape else
+        f"Дизайн с {shape.lower()} линиями подчёркивает черты лица и делает образ более выразительным." if shape else
         "Дизайн подчёркивает черты лица и делает образ более выразительным.",
         "Оправа выглядит современно и хорошо сочетается с базовой одеждой и летними образами.",
         "Линии оправы смотрятся аккуратно и “собирают” образ даже без дополнительных аксессуаров."
     ])
 
     lenses_block = random.choice([
-        f"Линзы {lens} дают комфорт при ярком солнце и подходят для активного дня."
-        if lens else
+        f"Линзы {lens} дают комфорт при ярком солнце и подходят для активного дня." if lens else
         "Линзы дают комфорт при ярком солнце и подходят для активного дня.",
-        f"С {lens} меньше хочется щуриться на улице, а дневной свет воспринимается спокойнее — особенно в городе и в дороге."
-        if lens else
+        f"С {lens} меньше хочется щуриться на улице, а дневной свет воспринимается спокойнее — особенно в городе и в дороге." if lens else
         "Дневной свет воспринимается спокойнее — особенно в городе и в дороге."
     ])
 
@@ -521,6 +527,8 @@ def generate_description_one(
     )
 
     parts = [opener, design, lenses_block]
+    if g_text:
+        parts.append(g_text)
 
     if desc_length in {"medium", "long"}:
         if fact and random.random() < 0.9:
@@ -543,6 +551,7 @@ def generate_description_one(
     text = " ".join([parts[0]] + mid + [parts[-1]])
     text = _strip_forbidden(text)
 
+    # анти-повтор старта
     start = _first_n_words(text, 7)
     tries = 0
     while start in recent_desc_starts and tries < 6:
@@ -644,7 +653,8 @@ def fill_wb_template(
     seo_level: str = "normal",
     desc_length: str = "medium",
     wb_safe_mode: bool = True,
-    wb_strict: bool = True,     # <-- v7.1
+    wb_strict: bool = True,
+    gender_mode: str = "Auto",   # Auto / Жен / Муж / Унисекс
 ) -> Tuple[str, int, str]:
     random.seed(time.time())
 
@@ -666,7 +676,7 @@ def fill_wb_template(
     done = 0
 
     report: Dict[str, Any] = {
-        "version": "v7.1",
+        "version": "v8-ui+auto-gender",
         "input_file": str(input_xlsx),
         "settings": {
             "brand": brand,
@@ -678,6 +688,7 @@ def fill_wb_template(
             "desc_length": desc_length,
             "wb_safe_mode": wb_safe_mode,
             "wb_strict": wb_strict,
+            "gender_mode": gender_mode,
             "preview_candidates": 3
         },
         "rows": []
@@ -696,10 +707,18 @@ def fill_wb_template(
 
         candidates = [
             generate_description_one(
-                brand=brand, shape=shape, lens=lens_features, collection=collection,
-                style=style, seo_level=seo_level, desc_length=desc_length,
-                slot=slot, recent_desc_starts=recent_desc_starts,
-                wb_safe_mode=wb_safe_mode, wb_strict=wb_strict
+                brand=brand,
+                shape=shape,
+                lens=lens_features,
+                collection=collection,
+                style=style,
+                seo_level=seo_level,
+                desc_length=desc_length,
+                slot=slot,
+                recent_desc_starts=recent_desc_starts,
+                wb_safe_mode=wb_safe_mode,
+                wb_strict=wb_strict,
+                gender_mode=gender_mode,
             )
             for _ in range(3)
         ]
@@ -719,7 +738,6 @@ def fill_wb_template(
             "matrix_focus": slot.get("focus"),
             "title": title,
             "picked": pick_meta,
-            "candidates_meta": [{"seo": seo_card(c), "template_penalty": template_penalty(c)} for c in candidates],
         })
 
         done += 1
@@ -739,20 +757,12 @@ def fill_wb_template(
     red = labels.count("🔴 слабая")
 
     lines = []
-    lines.append("SEO REPORT (v7.1)")
+    lines.append("SEO REPORT")
     lines.append(f"Файл: {out.name}")
-    lines.append(f"Safe: {'ON' if wb_safe_mode else 'OFF'} | Strict: {'ON' if wb_strict else 'OFF'}")
+    lines.append(f"Safe: {'ON' if wb_safe_mode else 'OFF'} | Strict: {'ON' if wb_strict else 'OFF'} | Gender: {gender_mode}")
     lines.append(f"SEO: {seo_level} | Length: {desc_length} | Style: {style}")
-    lines.append("Preview: 3 кандидата -> авто-выбор лучшего")
     lines.append("")
-    lines.append(f"Итог по силе: 🟢 {green} | 🟡 {yellow} | 🔴 {red}")
-    lines.append("")
-    for row in report["rows"][:12]:
-        p = row["picked"]
-        lines.append(f"Row {row['excel_row']} | Фокус: {row['matrix_focus']} | {p['seo']['label']} (seo {p['seo']['score']}) | total {p['score_total']}")
-        lines.append(f"  MustTailHits: {p['must_tail_hits']} | SimilarityMax: {p['max_similarity']} | TemplatePenalty: {p['template_penalty']}")
-        lines.append(f"  Название: {row['title']}")
-        lines.append("")
-
+    lines.append(f"Итог: 🟢 {green} | 🟡 {yellow} | 🔴 {red}")
     report_txt.write_text("\n".join(lines), encoding="utf-8")
+
     return str(out), done, str(report_json)
