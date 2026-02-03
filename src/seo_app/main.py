@@ -18,12 +18,14 @@ from seo_app.wb_fill import fill_wb_template
 # ==========================
 APP_NAME = "Sunglasses SEO PRO"
 
+
 def get_appdata_dir() -> Path:
     base = QStandardPaths.writableLocation(QStandardPaths.AppDataLocation)
     # Обычно это .../AppData/Roaming/<AppName>
     p = Path(base)
     p.mkdir(parents=True, exist_ok=True)
     return p
+
 
 APP_DIR = get_appdata_dir()
 DATA_DIR = APP_DIR / "data"
@@ -157,7 +159,21 @@ class FillWorker(QThread):
     finished = pyqtSignal(str, int, str)
     failed = pyqtSignal(str)
 
-    def __init__(self, *, input_xlsx, brand, shape, lens, collection, style, seo_level, desc_length, wb_safe_mode, wb_strict, gender_mode):
+    def __init__(
+        self,
+        *,
+        input_xlsx,
+        brand,
+        shape,
+        lens,
+        collection,
+        style,
+        seo_level,
+        desc_length,
+        wb_safe_mode,
+        wb_strict,
+        gender_mode
+    ):
         super().__init__()
         self.args = dict(
             input_xlsx=input_xlsx,
@@ -175,23 +191,22 @@ class FillWorker(QThread):
 
     def run(self):
         try:
-           import inspect
+            import inspect
 
-          # ВАЖНО: тут имя функции должно совпадать с твоим импортом
-          sig = inspect.signature(fill_wb_template)
-          allowed = sig.parameters.keys()
+            sig = inspect.signature(fill_wb_template)
+            allowed = sig.parameters.keys()
 
-          safe_args = {k: v for k, v in self.args.items() if k in allowed}
+            safe_args = {k: v for k, v in self.args.items() if k in allowed}
 
-          # безопасно добавляем прогресс, только если параметр реально есть
-          if "progress_callback" in allowed:
-            safe_args["progress_callback"] = lambda p: self.progress.emit(int(p))
+            # прогресс — только если функция реально поддерживает
+            if "progress_callback" in allowed:
+                safe_args["progress_callback"] = lambda p: self.progress.emit(int(p))
 
-          out, count, report_json = fill_wb_template(**safe_args)
-          self.finished.emit(out, count, report_json)
+            out, count, report_json = fill_wb_template(**safe_args)
+            self.finished.emit(out, count, report_json)
 
-      except Exception as e:
-          self.failed.emit(str(e))
+        except Exception as e:
+            self.failed.emit(str(e))
 
 
 # ==========================
@@ -421,7 +436,7 @@ class SeoApp(QWidget):
         else:
             self.theme_cb.setCurrentText("Sepia")
 
-        # ВАЖНО: setCurrentText работает даже если значения нет (editable=True) — это ок
+        # editable=True -> setCurrentText ок даже если значения нет
         self.brand_cb.setCurrentText(s.get("brand", ""))
         self.shape_cb.setCurrentText(s.get("shape", ""))
         self.lens_cb.setCurrentText(s.get("lens", ""))
