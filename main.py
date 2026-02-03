@@ -1,3 +1,4 @@
+from wb_fill import fill_wb_template
 # main.py (repo root)
 import sys
 import os
