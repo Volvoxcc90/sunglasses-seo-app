@@ -1,284 +1,221 @@
-import re
+# wb_fill.py
+import random
 import time
 import json
-import random
 from pathlib import Path
-from typing import Callable, Optional, Tuple, List, Dict, Any
+from copy import deepcopy
 
 from openpyxl import load_workbook
-from openpyxl.worksheet.worksheet import Worksheet
 
 
-# =====================
-# НАСТРОЙКИ
-# =====================
-TITLE_MAX_LEN = 60
-DESC_MAX_LEN = 2000
+# -------------------------------
+# УТИЛИТЫ
+# -------------------------------
 
-DESC_LENGTH_RANGES = {
-    "short":  (550, 850),
-    "medium": (900, 1400),
-    "long":   (1500, 2000),
-}
-
-SEO_LEVEL_COUNTS = {
-    "soft":   {"core": 1, "tail": 1, "feature": 0, "extra": 0},
-    "normal": {"core": 2, "tail": 1, "feature": 1, "extra": 0},
-    "hard":   {"core": 2, "tail": 2, "feature": 1, "extra": 1},
-}
-
-FORBIDDEN_LABELS = [
-    "сценарии", "ключевые слова:", "форма:", "линза:", "коллекция:"
-]
+def _seed():
+    # Гарантируем уникальный рандом КАЖДЫЙ запуск
+    random.seed(time.time_ns())
 
 
-# =====================
-# СЛОГАНЫ
-# =====================
+def _choice(seq):
+    return random.choice(seq)
+
+
+def _shuffle(seq):
+    seq = list(seq)
+    random.shuffle(seq)
+    return seq
+
+
+# -------------------------------
+# СЛОВАРИ / БАЗА
+# -------------------------------
+
 SLOGANS = [
-    "Красивые", "Крутые", "Стильные", "Модные", "Молодёжные",
-    "Трендовые", "Эффектные", "Дизайнерские", "Лаконичные",
-    "Яркие", "Премиальные", "Удобные", "Лёгкие", "Универсальные",
-    "Городские", "Летние", "Актуальные", "Смелые", "Элегантные",
-    "Современные", "Ультрамодные", "Хитовые"
+    "Красивые", "Стильные", "Крутые", "Модные", "Дизайнерские",
+    "Эффектные", "Современные", "Трендовые", "Лаконичные",
+    "Выразительные", "Актуальные", "Премиальные", "Яркие",
+    "Минималистичные", "Элегантные", "Универсальные",
+    "Молодёжные", "Городские", "Летние", "Комфортные",
+    "Практичные", "Инстаграмные", "ТикТок-тренд", "Фэшн",
+    "С характером", "Смелые", "Лёгкие", "Статусные"
 ]
 
+SCENARIOS = [
+    "городские прогулки",
+    "отпуск и путешествия",
+    "пляж и активный отдых",
+    "повседневные образы",
+    "вождение",
+    "город и поездки",
+]
 
-# =====================
-# SEO
-# =====================
-SEO_CORE = [
+INTRO_PHRASES = [
+    "Эти очки легко вписываются в современные образы и подчёркивают стиль.",
+    "Модель создана для тех, кто ценит комфорт и выразительный дизайн.",
+    "Очки выглядят актуально и гармонично дополняют летний гардероб.",
+    "Аксессуар, который делает образ завершённым и уверенным.",
+    "Идеальный вариант для яркого солнца и активного дня.",
+]
+
+STYLE_ENDINGS = [
+    "Подходят для повседневной носки и отдыха.",
+    "Сочетаются с городским и курортным стилем.",
+    "Удобны в течение всего дня.",
+    "Станут заметным акцентом образа.",
+    "Хорошо смотрятся в динамичном ритме города.",
+]
+
+SEO_KEYS = [
     "солнцезащитные очки",
     "солнечные очки",
-    "очки солнцезащитные",
     "брендовые очки",
-]
-
-SEO_TAIL = [
     "очки для города",
-    "очки для отпуска",
-    "очки для вождения",
-    "аксессуар на лето",
-    "инста очки",
-    "очки из tiktok",
-]
-
-SEO_FEATURES = [
-    "UV400",
-    "поляризационные очки",
-    "фотохромные очки",
+    "очки для лета",
+    "модные очки",
+    "очки UV400",
 ]
 
 
-# =====================
-# СЕМАНТИЧЕСКАЯ МАТРИЦА
-# =====================
-SEMANTIC_MATRIX = [
-    {"focus": "город", "must_tail": ["очки для города"]},
-    {"focus": "вождение", "must_tail": ["очки для вождения"]},
-    {"focus": "отпуск", "must_tail": ["очки для отпуска"]},
-    {"focus": "соцсети", "must_tail": ["инста очки"]},
-    {"focus": "универсальность", "must_tail": ["аксессуар на лето"]},
-    {"focus": "охват", "must_tail": []},
-]
+# -------------------------------
+# ГЕНЕРАЦИЯ ТЕКСТОВ
+# -------------------------------
+
+def generate_title(brand, shape, lens):
+    """
+    Бренд — РАНДОМНО:
+    • в ~50% случаев есть
+    • в ~50% отсутствует
+    Бренд — ВСЕГДА на кириллице
+    """
+    slogan = _choice(SLOGANS)
+    base = f"{slogan} солнцезащитные очки"
+
+    parts = [base]
+
+    if random.random() < 0.5 and brand:
+        parts.append(brand)
+
+    if lens:
+        parts.append(lens)
+
+    if shape and random.random() < 0.5:
+        parts.append(shape.lower())
+
+    title = " ".join(parts)
+    return title[:60].rstrip()
 
 
-# =====================
-# БРЕНДЫ (КИРИЛЛИЦА ТОЛЬКО ДЛЯ НАИМЕНОВАНИЯ)
-# =====================
-BRAND_RU_OVERRIDES = {
-    # ТОП
-    "gucci": "Гуччи",
-    "prada": "Прада",
-    "dior": "Диор",
-    "chanel": "Шанель",
-    "versace": "Версаче",
-    "fendi": "Фенди",
-    "balenciaga": "Баленсиага",
+def generate_description(brand, shape, lens, collection, style):
+    blocks = []
 
-    # Ray-Ban
-    "ray ban": "Рэй-Бэн",
-    "ray-ban": "Рэй-Бэн",
-    "rayban": "Рэй-Бэн",
+    blocks.append(_choice(INTRO_PHRASES))
 
-    # Miu Miu
-    "miu miu": "Миу Миу",
-    "miu-miu": "Миу Миу",
-    "miumiu": "Миу Миу",
-
-    # ic! berlin
-    "ic berlin": "Айс Берлин",
-    "ic-berlin": "Айс Берлин",
-    "icberlin": "Айс Берлин",
-    "ic! berlin": "Айс Берлин",
-    "ic!berlin": "Айс Берлин",
-
-    # прочие
-    "cazal": "Казал",
-    "oakley": "Окли",
-    "gentle monster": "Джентл Монстер",
-    "gentlemonster": "Джентл Монстер",
-    "dolce gabbana": "Дольче Габбана",
-    "dolcegabbana": "Дольче Габбана",
-    "saint laurent": "Сен-Лоран",
-    "saintlaurent": "Сен-Лоран",
-}
-
-
-# =====================
-# ВСПОМОГАТЕЛЬНЫЕ
-# =====================
-def _norm(s: str) -> str:
-    return re.sub(r"\s+", " ", (s or "").strip())
-
-
-def _contains_cyrillic(s: str) -> bool:
-    return bool(re.search(r"[А-Яа-яЁё]", s or ""))
-
-
-def _sun_term() -> str:
-    return random.choice(["солнцезащитные очки", "солнечные очки"])
-
-
-def _cut(text: str, max_len: int) -> str:
-    if len(text) <= max_len:
-        return text
-    return text[:max_len].rsplit(" ", 1)[0]
-
-
-# =====================
-# БРЕНД ДЛЯ НАИМЕНОВАНИЯ
-# =====================
-def brand_title_ru(brand_raw: str) -> str:
-    b = _norm(brand_raw)
-    if not b:
-        return ""
-
-    if _contains_cyrillic(b):
-        return b
-
-    b = b.lower()
-    b = b.replace("–", "-").replace("—", "-")
-    b = re.sub(r"[®™©!]", "", b)
-    b = re.sub(r"[^a-z0-9\- ]+", " ", b)
-    b = re.sub(r"\s+", " ", b).strip()
-
-    variants = {
-        b,
-        b.replace(" ", ""),
-        b.replace(" ", "-"),
-    }
-
-    for v in variants:
-        if v in BRAND_RU_OVERRIDES:
-            return BRAND_RU_OVERRIDES[v]
-
-    return brand_raw  # если неизвестный бренд — не портим
-
-
-# =====================
-# НАИМЕНОВАНИЕ
-# =====================
-def build_titles(brand_raw: str, shape: str, lens: str) -> List[str]:
-    brand_ru = brand_title_ru(brand_raw)
-    shape = _norm(shape)
-    lens = _norm(lens)
-
-    flags = [True, True, True, False, False, False]
-    random.shuffle(flags)
-
-    titles = []
-    for i in range(6):
-        slogan = random.choice(SLOGANS)
-        core = _sun_term()
-        brand_part = f"{brand_ru} " if flags[i] else ""
-        title = f"{slogan} {core} {brand_part}{lens} {shape}"
-        titles.append(_cut(_norm(title), TITLE_MAX_LEN))
-
-    return titles
-
-
-# =====================
-# ОПИСАНИЕ (БРЕНД = ЛАТИНИЦА)
-# =====================
-def build_description(
-    brand_raw: str,
-    shape: str,
-    lens: str,
-    collection: str,
-    slot: Dict[str, Any],
-) -> str:
-    parts = []
-
-    parts.append(
-        f"{brand_raw} — стильный аксессуар для солнечных дней, который подчёркивает образ и помогает чувствовать себя комфортно при ярком свете."
-    )
+    if brand:
+        blocks.append(
+            f"Очки {brand} отличаются продуманным дизайном и вниманием к деталям, "
+            f"что делает модель актуальной в сезоне {collection}."
+        )
 
     if shape:
-        parts.append(
-            f"Форма оправы {shape.lower()} выглядит актуально и хорошо сочетается с повседневными и летними образами."
+        blocks.append(
+            f"Форма оправы {shape.lower()} подчёркивает черты лица и смотрится уместно "
+            f"как в повседневных, так и в более выразительных образах."
         )
 
     if lens:
-        parts.append(
-            f"Линзы {lens} подходят для города, поездок и отдыха, когда важно снизить дискомфорт от солнца."
+        blocks.append(
+            f"Линзы {lens} обеспечивают защиту от яркого солнца и комфорт "
+            f"при длительном использовании."
         )
 
-    if collection:
-        parts.append(
-            f"Модель актуальна для сезона {collection} и легко вписывается в повседневный гардероб."
-        )
-
-    parts.append(
-        f"Подходит для сценариев: город, прогулки, отпуск. "
-        f"Если вы ищете {', '.join(slot.get('must_tail', SEO_CORE[:2]))}, эта модель сочетает внешний вид и практичность."
+    blocks.append(
+        f"Очки подойдут для таких сценариев, как {_choice(SCENARIOS)}, "
+        f"и легко адаптируются под разные стили."
     )
 
-    text = " ".join(parts)
-    return _cut(text, DESC_MAX_LEN)
+    blocks.append(_choice(STYLE_ENDINGS))
+
+    # SEO — мягко, внутри текста
+    seo_mix = _shuffle(SEO_KEYS)[:3]
+    blocks.append(" ".join(seo_mix) + ".")
+
+    text = " ".join(blocks)
+
+    # Немного стилистики
+    if style == "premium":
+        text = text.replace("очки", "аксессуар").replace("модель", "изделие")
+    elif style == "social":
+        text += " Отличный вариант для фото и социальных сетей."
+
+    return text
 
 
-# =====================
-# ЗАПОЛНЕНИЕ EXCEL
-# =====================
+# -------------------------------
+# ОСНОВНАЯ ФУНКЦИЯ
+# -------------------------------
+
 def fill_wb_template(
-    input_xlsx: str,
-    brand: str,
-    shape: str,
-    lens_features: str,
-    collection: str,
-    progress_callback: Optional[Callable[[int], None]] = None,
-) -> str:
+    input_xlsx,
+    brand="",
+    shape="",
+    lens_features="",
+    collection="Весна–Лето 2026",
+    style="neutral",
+    seo_level="normal",
+    desc_length="medium",
+    wb_safe_mode=True,
+    progress_callback=None,
+):
+    """
+    ВОЗВРАЩАЕТ СТРОГО:
+    (out_xlsx_path, rows_count, report_json)
+    """
+
+    _seed()
 
     wb = load_workbook(input_xlsx)
     ws = wb.active
 
-    # ищем заголовки
-    header = None
-    for r in range(1, 15):
-        names = [str(ws.cell(r, c).value).lower() for c in range(1, ws.max_column + 1)]
-        if "наименование" in names and "описание" in names:
-            header = r
-            break
-    if not header:
-        raise ValueError("Не найдены колонки Наименование / Описание")
+    title_col = None
+    desc_col = None
 
-    col_name = names.index("наименование") + 1
-    col_desc = names.index("описание") + 1
+    # ищем колонки
+    for col in range(1, ws.max_column + 1):
+        header = str(ws.cell(row=1, column=col).value).lower()
+        if "наимен" in header:
+            title_col = col
+        if "описан" in header:
+            desc_col = col
 
-    rows = ws.max_row - header
-    for i, r in enumerate(range(header + 1, ws.max_row + 1)):
-        slot = SEMANTIC_MATRIX[(i) % len(SEMANTIC_MATRIX)]
+    if not title_col or not desc_col:
+        raise ValueError("Не найдены колонки 'Наименование' и/или 'Описание'")
 
-        title = random.choice(build_titles(brand, shape, lens_features))
-        desc = build_description(brand, shape, lens_features, collection, slot)
+    rows_filled = 0
 
-        ws.cell(r, col_name).value = title
-        ws.cell(r, col_desc).value = desc
+    for row in range(2, ws.max_row + 1):
+        title = generate_title(brand, shape, lens_features)
+        desc = generate_description(brand, shape, lens_features, collection, style)
+
+        ws.cell(row=row, column=title_col).value = title
+        ws.cell(row=row, column=desc_col).value = desc
+
+        rows_filled += 1
 
         if progress_callback:
-            progress_callback(int((i + 1) * 100 / rows))
+            progress_callback((row - 1) / (ws.max_row - 1) * 100)
 
-    out = Path(input_xlsx).with_name(Path(input_xlsx).stem + "_FILLED.xlsx")
-    wb.save(out)
-    return str(out)
+    out_path = Path(input_xlsx).with_name(
+        Path(input_xlsx).stem + "_SEO.xlsx"
+    )
+
+    wb.save(out_path)
+
+    report = {
+        "rows": rows_filled,
+        "brand": brand,
+        "style": style,
+        "collection": collection,
+    }
+
+    return str(out_path), rows_filled, json.dumps(report, ensure_ascii=False)
