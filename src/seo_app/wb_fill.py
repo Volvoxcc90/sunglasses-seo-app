@@ -53,7 +53,6 @@ SEO_FEATURES = [
     "зеркальные линзы", "градиентные линзы"
 ]
 
-# Матрица смыслов по партии
 SEMANTIC_MATRIX = [
     {"focus": "Город/повседневка",   "must_tail": ["очки для города"],                          "add": ["брендовые очки"]},
     {"focus": "Вождение",            "must_tail": ["очки для вождения"],                        "add": ["очки солнцезащитные"]},
@@ -63,7 +62,6 @@ SEMANTIC_MATRIX = [
     {"focus": "Охват/ядро",          "must_tail": ["аксессуар на лето"],                        "add": ["очки солнцезащитные"]},
 ]
 
-# WB safe mode
 WB_SAFE_REPLACEMENTS = [
     (r"\bреплика\b", "стилизация"),
     (r"\bреплики\b", "стилизации"),
@@ -75,7 +73,6 @@ WB_SAFE_REPLACEMENTS = [
     (r"\breplica\b", "style"),
 ]
 
-# WB strict: убираем обещания/абсолюты/опасные слова
 STRICT_REWRITE = [
     (r"\b100%\b", "высокая"),
     (r"\bгарант(ия|ируем|ирует|ировано)\b", "обычно обеспечивает"),
@@ -100,6 +97,39 @@ STRICT_DROP_PATTERNS = [
 ]
 
 
+# ==========================
+# Бренды: ВАЖНО
+# 1) если бренд уже кириллицей — оставляем
+# 2) если латиницей — переводим ТОЛЬКО если есть в словаре
+# 3) если нет в словаре — оставляем латиницу (не портим)
+# ==========================
+BRAND_RU_OVERRIDES = {
+    "gucci": "Гуччи",
+    "dior": "Диор",
+    "prada": "Прада",
+    "ray-ban": "Рэй-Бэн",
+    "ray ban": "Рэй-Бэн",
+    "cazal": "Казал",
+    "versace": "Версаче",
+    "chanel": "Шанель",
+    "cartier": "Картье",
+    "oakley": "Окли",
+    "burberry": "Бёрберри",
+    "balenciaga": "Баленсиага",
+    "fendi": "Фенди",
+    "givenchy": "Живанши",
+    "saint laurent": "Сен-Лоран",
+    "yves saint laurent": "Сен-Лоран",
+    "dolce gabbana": "Дольче Габбана",
+    "dolce & gabbana": "Дольче Габбана",
+    "tom ford": "Том Форд",
+    "gentle monster": "Джентл Монстер",
+    "polaroid": "Полароид",
+    "hugoboss": "Хьюго Босс",
+    "hugo boss": "Хьюго Босс",
+}
+
+
 def _norm(s: str) -> str:
     return re.sub(r"\s+", " ", (s or "").strip())
 
@@ -112,6 +142,34 @@ def _cut_no_word_break(text: str, max_len: int) -> str:
     return cut.strip() if cut else text[:max_len].strip()
 
 
+def _contains_cyrillic(s: str) -> bool:
+    return bool(re.search(r"[А-Яа-яЁё]", s or ""))
+
+
+def brand_display_name(brand: str) -> str:
+    """Возвращает бренд для названия: кириллица если известный, иначе как ввели."""
+    brand = _norm(brand)
+    if not brand:
+        return ""
+    if _contains_cyrillic(brand):
+        return brand
+
+    key = brand.lower().replace("&", " ").replace("-", " ").strip()
+    key = re.sub(r"\s+", " ", key)
+
+    # сначала пробуем как есть, потом с дефисом/пробелом
+    if key in BRAND_RU_OVERRIDES:
+        return BRAND_RU_OVERRIDES[key]
+
+    # ещё пробуем исходник без "лишнего"
+    key2 = key.replace("  ", " ").strip()
+    if key2 in BRAND_RU_OVERRIDES:
+        return BRAND_RU_OVERRIDES[key2]
+
+    # НЕ транслитерируем — оставляем латиницу, чтобы не было “кривого бренда”
+    return brand
+
+
 def _sun_term() -> str:
     return random.choice(["солнцезащитные очки", "солнечные очки"])
 
@@ -120,8 +178,7 @@ def _strip_forbidden(text: str) -> str:
     t = text
     for lab in FORBIDDEN_LABELS:
         t = re.sub(re.escape(lab), "", t, flags=re.IGNORECASE)
-    t = re.sub(r"\s{2,}", " ", t).strip()
-    return t
+    return re.sub(r"\s{2,}", " ", t).strip()
 
 
 def _apply_wb_safe(text: str) -> str:
@@ -172,45 +229,12 @@ def _clamp_modes(style: str, seo_level: str, desc_length: str) -> Tuple[str, str
     return style, seo_level, desc_length
 
 
-# --- Бренд -> кириллица (в названии)
-BRAND_RU_OVERRIDES = {
-    "gucci": "Гуччи", "dior": "Диор", "prada": "Прада", "cazal": "Казал",
-    "ray-ban": "Рэй-Бэн", "ray ban": "Рэй-Бэн", "versace": "Версаче",
-    "chanel": "Шанель", "cartier": "Картье", "oakley": "Окли",
-    "burberry": "Бёрберри",
-}
-
-TRANSLIT_MAP = [
-    ("sch", "ш"), ("ch", "ч"), ("sh", "ш"), ("ya", "я"), ("yu", "ю"),
-    ("yo", "ё"), ("ye", "е"), ("kh", "х"), ("ts", "ц"),
-    ("a", "а"), ("b", "б"), ("c", "к"), ("d", "д"), ("e", "е"),
-    ("f", "ф"), ("g", "г"), ("h", "х"), ("i", "и"), ("j", "дж"),
-    ("k", "к"), ("l", "л"), ("m", "м"), ("n", "н"), ("o", "о"),
-    ("p", "п"), ("q", "к"), ("r", "р"), ("s", "с"), ("t", "т"),
-    ("u", "у"), ("v", "в"), ("w", "в"), ("x", "кс"), ("y", "и"), ("z", "з"),
-]
-
-def brand_to_cyrillic(brand: str) -> str:
-    brand = _norm(brand)
-    if not brand:
-        return ""
-    if re.search(r"[А-Яа-яЁё]", brand):
-        return brand
-    key = brand.lower().replace("&", " ").replace("-", " ").strip()
-    key = re.sub(r"\s+", " ", key)
-    if key in BRAND_RU_OVERRIDES:
-        return BRAND_RU_OVERRIDES[key]
-    b = key
-    for latin, ru in TRANSLIT_MAP:
-        b = b.replace(latin, ru)
-    return b[:1].upper() + b[1:]
-
-
 def build_titles_6(brand: str, shape: str, lens: str) -> List[str]:
-    brand_ru = brand_to_cyrillic(brand)
+    brand_show = brand_display_name(brand)
     shape = _norm(shape)
     lens = _norm(lens)
 
+    # бренд рандомно: в 3 из 6 есть, в 3 из 6 нет
     flags = [True, True, True, False, False, False]
     random.shuffle(flags)
 
@@ -230,7 +254,7 @@ def build_titles_6(brand: str, shape: str, lens: str) -> List[str]:
         slogan = local_slogans[i]
         core = _sun_term()
 
-        brand_part = (brand_ru + " ") if (flags[i] and brand_ru) else ""
+        brand_part = (brand_show + " ") if (flags[i] and brand_show) else ""
         shape_part = (shape + " ") if (shape and random.random() < 0.55) else ""
         lens_part = (lens + " ") if (lens and random.random() < 0.70) else ""
 
@@ -304,16 +328,13 @@ def infer_gender_mode(shape: str, lens: str) -> str:
         return "Унисекс"
     if "оверсайз" in s:
         return "Жен"
-    if "спорт" in s or "oakley" in l:
+    if "спорт" in s or "sport" in s or "oakley" in l:
         return "Муж"
     return "Унисекс"
 
 
-def gender_phrase(gender_mode: str, slot_focus: str) -> str:
-    # аккуратно, чтобы не выглядело шаблоном (и не на каждую карточку)
+def gender_phrase(gender_mode: str) -> str:
     g = (gender_mode or "Auto").strip()
-    if g == "Auto":
-        return ""  # в Auto подставим позже после инференса
     if g == "Жен":
         return random.choice([
             "Подходит для женских образов — от повседневных до более выразительных.",
@@ -453,15 +474,13 @@ def generate_description_one(
     kw = _choose_keywords(lens, seo_level, slot)
     scen_txt = _scenario_text_by_slot(slot)
 
-    # AUTO-пол (инференс)
     gmode = (gender_mode or "Auto").strip()
     if gmode == "Auto":
         gmode = infer_gender_mode(shape, lens)
 
-    # гендер-фраза — не в каждую карточку, чтобы не пахло шаблоном
     g_text = ""
     if random.random() < 0.65:
-        g_text = gender_phrase(gmode, slot.get("focus", ""))
+        g_text = gender_phrase(gmode)
 
     openers = []
     if brand:
@@ -551,7 +570,6 @@ def generate_description_one(
     text = " ".join([parts[0]] + mid + [parts[-1]])
     text = _strip_forbidden(text)
 
-    # анти-повтор старта
     start = _first_n_words(text, 7)
     tries = 0
     while start in recent_desc_starts and tries < 6:
@@ -654,7 +672,7 @@ def fill_wb_template(
     desc_length: str = "medium",
     wb_safe_mode: bool = True,
     wb_strict: bool = True,
-    gender_mode: str = "Auto",   # Auto / Жен / Муж / Унисекс
+    gender_mode: str = "Auto",
 ) -> Tuple[str, int, str]:
     random.seed(time.time())
 
@@ -676,7 +694,7 @@ def fill_wb_template(
     done = 0
 
     report: Dict[str, Any] = {
-        "version": "v8-ui+auto-gender",
+        "version": "v8-brand-fix",
         "input_file": str(input_xlsx),
         "settings": {
             "brand": brand,
