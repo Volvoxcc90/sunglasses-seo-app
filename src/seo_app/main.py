@@ -174,7 +174,7 @@ class FillWorker(QThread):
         )
 
     def run(self):
-    try:
+        try:
         import inspect
 
         # ВАЖНО: тут имя функции должно совпадать с твоим импортом
