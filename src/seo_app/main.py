@@ -175,10 +175,15 @@ class FillWorker(QThread):
 
     def run(self):
         try:
-            out, count, report_json = fill_wb_template(
-                progress_callback=lambda p: self.progress.emit(int(p)),
-                **self.args
-            )
+            sig = inspect.signature(fill_wb_template)
+allowed = sig.parameters.keys()
+
+safe_args = {k: v for k, v in self.args.items() if k in allowed}
+
+out, count, report_json = fill_wb_template(
+    progress_callback=lambda p: self.progress.emit(int(p)),
+    **safe_args
+)
             self.finished.emit(out, count, report_json)
         except Exception as e:
             self.failed.emit(str(e))
