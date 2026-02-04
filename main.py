@@ -19,7 +19,8 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import QThread, pyqtSignal
 
-from wb_fill import fill_wb_template
+- from wb_fill import fill_wb_template
++ from .wb_fill import fill_wb_template
 
 
 
