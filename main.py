@@ -1,6 +1,12 @@
 # main.py
 import sys
 import os
+
+# ✅ фикс: всегда добавляем папку, где лежит main.py, в sys.path
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+
 import json
 import re
 import inspect
@@ -14,6 +20,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import QThread, pyqtSignal
 
 from wb_fill import fill_wb_template
+
 
 
 APP_NAME = "Sunglasses SEO PRO"
