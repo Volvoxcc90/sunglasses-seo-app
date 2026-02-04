@@ -1,17 +1,10 @@
-from wb_fill import fill_wb_template
-# main.py (repo root)
+# main.py
 import sys
 import os
 import json
 import re
 import inspect
 from pathlib import Path
-
-# ✅ ВАЖНО: добавляем ./src в PYTHONPATH, чтобы работало src/seo_app/*
-ROOT = Path(__file__).resolve().parent
-SRC = ROOT / "src"
-if SRC.exists():
-    sys.path.insert(0, str(SRC))
 
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QFileDialog, QLineEdit,
@@ -20,8 +13,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import QThread, pyqtSignal
 
-# ✅ правильный импорт из src/seo_app/wb_fill.py
-from seo_app.wb_fill import fill_wb_template
+from wb_fill import fill_wb_template
 
 
 APP_NAME = "Sunglasses SEO PRO"
@@ -38,7 +30,7 @@ def app_data_dir() -> Path:
 
 
 # -------------------------------
-# BRAND MAP (AUTO)
+# BRAND MAP
 # -------------------------------
 def normalize_brand_key(brand: str) -> str:
     b = (brand or "").strip().lower()
@@ -48,13 +40,13 @@ def normalize_brand_key(brand: str) -> str:
 
 
 TRANSLIT = [
-    ("sch", "ш"), ("sh", "ш"), ("ch", "ч"), ("ya", "я"), ("yu", "ю"), ("yo", "ё"),
-    ("kh", "х"), ("ts", "ц"), ("ph", "ф"), ("th", "т"),
-    ("a", "а"), ("b", "б"), ("c", "к"), ("d", "д"), ("e", "е"), ("f", "ф"),
-    ("g", "г"), ("h", "х"), ("i", "и"), ("j", "дж"), ("k", "к"), ("l", "л"),
-    ("m", "м"), ("n", "н"), ("o", "о"), ("p", "п"), ("q", "к"), ("r", "р"),
-    ("s", "с"), ("t", "т"), ("u", "у"), ("v", "в"), ("w", "в"), ("x", "кс"),
-    ("y", "и"), ("z", "з"),
+    ("sch","ш"),("sh","ш"),("ch","ч"),("ya","я"),("yu","ю"),("yo","ё"),
+    ("kh","х"),("ts","ц"),("ph","ф"),("th","т"),
+    ("a","а"),("b","б"),("c","к"),("d","д"),("e","е"),("f","ф"),
+    ("g","г"),("h","х"),("i","и"),("j","дж"),("k","к"),("l","л"),
+    ("m","м"),("n","н"),("o","о"),("p","п"),("q","к"),("r","р"),
+    ("s","с"),("t","т"),("u","у"),("v","в"),("w","в"),("x","кс"),
+    ("y","и"),("z","з"),
 ]
 
 
@@ -65,8 +57,8 @@ def guess_ru(brand: str) -> str:
     out = []
     for w in key.split():
         ww = w
-        for a, b in TRANSLIT:
-            ww = ww.replace(a, b)
+        for a,b in TRANSLIT:
+            ww = ww.replace(a,b)
         out.append(ww)
     return " ".join(x.capitalize() for x in out)
 
@@ -129,7 +121,7 @@ def add_to_list(filename: str, value: str):
 # -------------------------------
 class Worker(QThread):
     progress = pyqtSignal(int)
-    done = pyqtSignal(str, int, str)
+    done = pyqtSignal(str, int)
     error = pyqtSignal(str)
 
     def __init__(self, args: dict):
@@ -145,9 +137,8 @@ class Worker(QThread):
             if "progress_callback" in allowed:
                 safe_args["progress_callback"] = lambda p: self.progress.emit(int(p))
 
-            result = fill_wb_template(**safe_args)
-            out, count, report = result[0], result[1], result[2]
-            self.done.emit(out, count, report)
+            out, count = fill_wb_template(**safe_args)
+            self.done.emit(out, count)
         except Exception as e:
             self.error.emit(str(e))
 
@@ -163,7 +154,6 @@ class MainWindow(QWidget):
 
         self.data_dir = app_data_dir()
 
-        # бренды
         self.brands = load_list("brands.txt", ["Gucci", "Prada", "Miu Miu"])
         auto_update_brand_map(self.brands)
 
@@ -189,13 +179,9 @@ class MainWindow(QWidget):
         plus.clicked.connect(self.add_brand)
         grid.addWidget(plus, 0, 2)
 
-        open_data = QPushButton("📁 data")
-        open_data.clicked.connect(self.open_data_folder)
-        grid.addWidget(open_data, 0, 3)
-
         grid.addWidget(QLabel("Коллекция"), 1, 0)
         self.collection = QLineEdit("Весна–Лето 2026")
-        grid.addWidget(self.collection, 1, 1, 1, 3)
+        grid.addWidget(self.collection, 1, 1, 1, 2)
 
         layout.addWidget(box)
 
@@ -214,25 +200,16 @@ class MainWindow(QWidget):
         run.clicked.connect(self.run)
         layout.addWidget(run)
 
-    def open_data_folder(self):
-        try:
-            os.startfile(str(self.data_dir))
-        except Exception:
-            QMessageBox.information(self, "Папка data", str(self.data_dir))
-
     def add_brand(self):
-        val = (self.brand.currentText() or "").strip()
+        val = self.brand.currentText().strip()
         if not val:
             return
-
         add_to_list("brands.txt", val)
         auto_update_brand_map([val])
-
         self.brands = load_list("brands.txt", [])
         self.brand.clear()
         self.brand.addItems(self.brands)
         self.brand.setCurrentText(val)
-
         QMessageBox.information(self, "Готово", f"Добавлено: {val}")
 
     def pick_file(self):
