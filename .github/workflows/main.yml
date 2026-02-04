@@ -24,7 +24,7 @@ jobs:
 
       - name: Build EXE
         run: |
-          pyinstaller --onefile --noconsole --name SunglassesSEO main.py
+          pyinstaller --onefile --noconsole --name SunglassesSEO --hidden-import wb_fill main.py
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
