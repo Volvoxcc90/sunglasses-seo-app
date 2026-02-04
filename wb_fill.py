@@ -108,7 +108,7 @@ def find_col(ws, names):
     return None
 
 
-def fill_wb_template(input_xlsx: str, brand: str, collection: str, progress_callback=None):
+def fill_wb_template(template_path, data, style=None):
     wb = load_workbook(input_xlsx)
     ws = wb.active
 
