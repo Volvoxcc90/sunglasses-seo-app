@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 import traceback
-from dataclasses import asdict
 from typing import Optional
 
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
@@ -12,7 +12,7 @@ from PyQt5.QtGui import QFont
 from PyQt5.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog, QFrame, QGridLayout,
     QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox, QPushButton,
-    QProgressBar, QSpinBox, QVBoxLayout, QWidget, QInputDialog
+    QProgressBar, QVBoxLayout, QWidget, QInputDialog
 )
 
 from wb_fill import FillParams, fill_wb_template, generate_preview
@@ -36,17 +36,12 @@ QPushButton {
 }
 QPushButton:hover { background: #3776ea; }
 QPushButton:disabled { background: #2b2b2c; color: #888; }
-
-QPushButton#btnSmall {
-  padding: 8px 12px; border-radius: 12px; font-weight: 700;
-}
-
+QPushButton#btnSmall { padding: 8px 12px; border-radius: 12px; font-weight: 700; }
 QLineEdit, QComboBox {
   background: #101011; border: 1px solid #2b2b2c; border-radius: 10px; padding: 8px 10px;
 }
 QComboBox::drop-down { border: none; width: 24px; }
 QComboBox::down-arrow { image: none; }
-
 QCheckBox { spacing: 8px; }
 QProgressBar {
   background: #101011; border: 1px solid #2b2b2c; border-radius: 12px; text-align: center;
@@ -72,6 +67,10 @@ class Worker(QThread):
     def run(self):
         try:
             results = {"files": []}
+
+            # seed на запуск, + смещение на каждый файл => реально разные тексты
+            base_seed = int(time.time() * 1000)
+
             for i in range(1, self.batch_n + 1):
                 if self.batch_n == 1:
                     out_name = f"{self.base_name}_ready.xlsx"
@@ -79,15 +78,13 @@ class Worker(QThread):
                     out_name = f"{self.base_name}_ready_{i}.xlsx"
                 out_path = os.path.join(self.out_dir, out_name)
 
-                # seed, чтобы реально отличались тексты между файлами
                 p = self.params
-                p.seed = (p.seed or 0) + i * 10007
+                p.seed = base_seed + i * 10007
 
                 rep = fill_wb_template(self.in_path, out_path, p)
                 results["files"].append(rep)
 
-                pct = int(i / self.batch_n * 100)
-                self.progress.emit(pct)
+                self.progress.emit(int(i / self.batch_n * 100))
 
             self.finished.emit(results)
         except Exception as e:
@@ -100,10 +97,6 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Sunglasses SEO PRO")
         self.setFixedSize(1104, 738)
 
-        # DPI
-        QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
-        QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
-
         self.data_dir = app_data_dir("Sunglasses SEO PRO")
         self.in_xlsx: Optional[str] = None
 
@@ -115,7 +108,7 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(18, 18, 18, 18)
         layout.setSpacing(12)
 
-        # Header card
+        # Header
         header = QFrame()
         header.setObjectName("card")
         hl = QVBoxLayout(header)
@@ -128,7 +121,7 @@ class MainWindow(QMainWindow):
         hl.addWidget(subtitle)
         layout.addWidget(header)
 
-        # Controls card (theme + data dir)
+        # Theme + data dir
         ctrl = QFrame()
         ctrl.setObjectName("card")
         cl = QGridLayout(ctrl)
@@ -153,19 +146,21 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(ctrl)
 
-        # XLSX card
+        # XLSX file picker
         xcard = QFrame()
         xcard.setObjectName("card")
         xl = QHBoxLayout(xcard)
         xl.setContentsMargins(18, 14, 18, 14)
+
         btn_load = QPushButton("📄 Загрузить XLSX")
         btn_load.clicked.connect(self.pick_xlsx)
         self.x_label = QLabel("Файл не выбран")
+
         xl.addWidget(btn_load)
         xl.addWidget(self.x_label, 1)
         layout.addWidget(xcard)
 
-        # Form card
+        # Form
         form = QFrame()
         form.setObjectName("card")
         fl = QGridLayout(form)
@@ -173,52 +168,67 @@ class MainWindow(QMainWindow):
         fl.setHorizontalSpacing(12)
         fl.setVerticalSpacing(10)
 
-        self.brand_cb = QComboBox(); self.brand_cb.addItems(["Balenciaga", "Gucci", "Prada", "Ray-Ban", "Dior", "Versace"])
-        self.shape_cb = QComboBox(); self.shape_cb.addItems(["Вайфаеры", "Авиаторы", "Кошачий глаз", "Квадратные", "Круглые", "Овальные"])
-        self.lens_cb = QComboBox(); self.lens_cb.addItems(["Поляризационные", "Градиентные", "Зеркальные", "Фотохромные", "УФ400"])
+        self.brand_cb = QComboBox()
+        self.brand_cb.addItems(["Balenciaga", "Gucci", "Prada", "Ray-Ban", "Dior", "Versace"])
+
+        self.shape_cb = QComboBox()
+        self.shape_cb.addItems(["Вайфаеры", "Авиаторы", "Кошачий глаз", "Квадратные", "Круглые", "Овальные"])
+
+        self.lens_cb = QComboBox()
+        self.lens_cb.addItems(["Поляризационные", "Градиентные", "Зеркальные", "Фотохромные", "УФ400"])
+
         self.collection_le = QLineEdit("Весна–Лето 2026")
 
-        # left labels + combos
-        fl.addWidget(QLabel("Бренд"), 0, 0); fl.addWidget(self.brand_cb, 0, 1)
-        fl.addWidget(QLabel("Форма оправы"), 1, 0); fl.addWidget(self.shape_cb, 1, 1)
-        fl.addWidget(QLabel("Линзы"), 2, 0); fl.addWidget(self.lens_cb, 2, 1)
-        fl.addWidget(QLabel("Коллекция"), 3, 0); fl.addWidget(self.collection_le, 3, 1)
+        fl.addWidget(QLabel("Бренд"), 0, 0)
+        fl.addWidget(self.brand_cb, 0, 1)
 
-        # placeholders for "+" buttons to match screenshot look (без логики, чтобы не ломать UI)
+        fl.addWidget(QLabel("Форма оправы"), 1, 0)
+        fl.addWidget(self.shape_cb, 1, 1)
+
+        fl.addWidget(QLabel("Линзы"), 2, 0)
+        fl.addWidget(self.lens_cb, 2, 1)
+
+        fl.addWidget(QLabel("Коллекция"), 3, 0)
+        fl.addWidget(self.collection_le, 3, 1)
+
+        # "+" кнопки (как в макете)
         for r in range(0, 3):
             plus = QPushButton("+")
             plus.setFixedWidth(42)
             plus.clicked.connect(lambda: None)
             fl.addWidget(plus, r, 2)
 
-        # seo density / length / style row
         fl.addWidget(QLabel("SEO-плотность"), 4, 0)
-        self.seo_cb = QComboBox(); self.seo_cb.addItems(["low", "normal", "high"])
+        self.seo_cb = QComboBox()
+        self.seo_cb.addItems(["low", "normal", "high"])
         fl.addWidget(self.seo_cb, 4, 1)
 
         fl.addWidget(QLabel("Длина"), 4, 2)
-        self.len_cb = QComboBox(); self.len_cb.addItems(["short", "medium", "long"])
+        self.len_cb = QComboBox()
+        self.len_cb.addItems(["short", "medium", "long"])
         fl.addWidget(self.len_cb, 4, 3)
 
         fl.addWidget(QLabel("Стиль"), 4, 4)
-        self.style_cb = QComboBox(); self.style_cb.addItems(["premium", "basic", "sport"])
+        self.style_cb = QComboBox()
+        self.style_cb.addItems(["premium", "basic", "sport"])
         fl.addWidget(self.style_cb, 4, 5)
 
-        # gender + safe/strict
         fl.addWidget(QLabel("AUTO-пол"), 5, 0)
-        self.gender_cb = QComboBox(); self.gender_cb.addItems(["Auto", "Male", "Female"])
+        self.gender_cb = QComboBox()
+        self.gender_cb.addItems(["Auto", "Male", "Female"])
         fl.addWidget(self.gender_cb, 5, 1)
 
         self.safe_ck = QCheckBox("WB Safe Mode (заменяет риск-слова)")
         self.safe_ck.setChecked(True)
         self.strict_ck = QCheckBox("WB Strict (убирает обещания/абсолюты)")
         self.strict_ck.setChecked(True)
+
         fl.addWidget(self.safe_ck, 5, 2, 1, 2)
         fl.addWidget(self.strict_ck, 5, 4, 1, 2)
 
         layout.addWidget(form)
 
-        # Bottom bar card (progress + buttons)
+        # Bottom bar: progress + two buttons
         bottom = QFrame()
         bottom.setObjectName("card")
         bl = QHBoxLayout(bottom)
@@ -240,9 +250,6 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(bottom)
 
-        # Live preview (не отображаем отдельным блоком, чтобы UI оставался как на скрине)
-        # но generate_preview доступен — можно включить позже без риска импорта.
-
         self.worker: Optional[Worker] = None
 
     def pick_data_dir(self):
@@ -257,7 +264,7 @@ class MainWindow(QMainWindow):
             self.in_xlsx = path
             self.x_label.setText(os.path.basename(path))
 
-    def _build_params(self, seed: Optional[int] = None) -> FillParams:
+    def _build_params(self) -> FillParams:
         gender = self.gender_cb.currentText().lower()
         if gender == "auto":
             gm = "auto"
@@ -278,9 +285,7 @@ class MainWindow(QMainWindow):
             safe_mode=self.safe_ck.isChecked(),
             strict_mode=self.strict_ck.isChecked(),
             data_dir=self.data_dir,
-            seed=seed,
-            rows_to_fill=6,          # <<< ВАЖНО: 6 строк
-            fill_only_empty=True,
+            seed=None,            # seed выставляет Worker
             uniq_strength=3,
         )
 
@@ -298,7 +303,7 @@ class MainWindow(QMainWindow):
         out_dir = os.path.dirname(in_path)
         base = os.path.splitext(os.path.basename(in_path))[0]
 
-        params = self._build_params(seed=12345)
+        params = self._build_params()
 
         self.progress.setValue(0)
         self.btn_single.setEnabled(False)
@@ -336,11 +341,16 @@ class MainWindow(QMainWindow):
 
 
 def main():
+    # DPI до QApplication
+    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+
     app = QApplication(sys.argv)
-    # аккуратный базовый шрифт
     app.setFont(QFont("Segoe UI", 10))
+
     w = MainWindow()
     w.show()
+
     sys.exit(app.exec_())
 
 
