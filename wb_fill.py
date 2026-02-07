@@ -22,14 +22,6 @@ DEFAULT_BRANDS_RU = {
     "Versace": "Versace",
 }
 
-DEFAULT_SHAPES = [
-    "Вайфаеры", "Авиаторы", "Кошачий глаз", "Квадратные", "Круглые", "Овальные"
-]
-
-DEFAULT_LENSES = [
-    "Поляризационные", "Градиентные", "Зеркальные", "Фотохромные", "УФ400"
-]
-
 SLOGANS = [
     "Лаконичный дизайн", "Уверенный образ", "Комфорт на каждый день",
     "Акцент на деталях", "Современная эстетика", "Городской стиль",
@@ -63,14 +55,18 @@ def _read_json(path: str) -> Optional[object]:
 
 
 def load_brands_ru_map(data_dir: str) -> Dict[str, str]:
-    # ожидаем либо brands.json как dict {"Balenciaga":"Балenciaga"} или list объектов
+    """
+    Поддерживает:
+      - dict {"Balenciaga":"Балenciaga"}
+      - list объектов [{"lat":"Balenciaga","ru":"Балenciaga"}]
+    """
     if data_dir:
         p = os.path.join(data_dir, "brands.json")
         obj = _read_json(p)
         if isinstance(obj, dict):
             return {str(k): str(v) for k, v in obj.items()}
         if isinstance(obj, list):
-            m = {}
+            m: Dict[str, str] = {}
             for it in obj:
                 if isinstance(it, dict):
                     lat = it.get("lat") or it.get("en") or it.get("brand") or it.get("key")
@@ -80,25 +76,6 @@ def load_brands_ru_map(data_dir: str) -> Dict[str, str]:
             if m:
                 return m
     return dict(DEFAULT_BRANDS_RU)
-
-
-def load_list(data_dir: str, filename: str, fallback: List[str]) -> List[str]:
-    if data_dir:
-        p = os.path.join(data_dir, filename)
-        obj = _read_json(p)
-        if isinstance(obj, list):
-            out = []
-            for it in obj:
-                if isinstance(it, str):
-                    out.append(it)
-                elif isinstance(it, dict):
-                    # поддержка форматов {"name": "..."} / {"ru": "..."} / {"value":"..."}
-                    v = it.get("ru") or it.get("name") or it.get("value")
-                    if v:
-                        out.append(str(v))
-            if out:
-                return out
-    return list(fallback)
 
 
 def apply_safe(text: str) -> str:
@@ -118,11 +95,10 @@ def apply_strict(text: str) -> str:
 
 
 def clamp(s: str, max_len: int) -> str:
-    s = s.strip()
+    s = (s or "").strip()
     if len(s) <= max_len:
         return s
-    # аккуратно режем по слову
-    cut = s[: max_len]
+    cut = s[:max_len]
     if " " in cut:
         cut = cut.rsplit(" ", 1)[0]
     return cut.strip()
@@ -142,24 +118,6 @@ def jaccard(a: str, b: str) -> float:
     inter = len(sa & sb)
     union = len(sa | sb)
     return inter / union if union else 0.0
-
-
-def generate_title(
-    brand_lat: str,
-    shape: str,
-    lens: str,
-    brand_map: Dict[str, str],
-    slogan_pool: List[str],
-) -> str:
-    brand_ru = brand_map.get(brand_lat, brand_lat)
-    bits = [
-        f"Солнцезащитные очки {brand_ru}",
-        shape,
-        lens,
-        random.choice(slogan_pool) if slogan_pool else "",
-    ]
-    s = " • ".join([b for b in bits if b]).strip(" •")
-    return clamp(s, TITLE_MAX)
 
 
 def _gender_phrase(gender_mode: str) -> str:
@@ -198,6 +156,24 @@ def _style_hint(style_mode: str) -> str:
     return "в премиальном тоне"
 
 
+def generate_title(
+    brand_lat: str,
+    shape: str,
+    lens: str,
+    brand_map: Dict[str, str],
+    slogan_pool: List[str],
+) -> str:
+    brand_ru = brand_map.get(brand_lat, brand_lat)
+    bits = [
+        f"Солнцезащитные очки {brand_ru}",
+        shape,
+        lens,
+        random.choice(slogan_pool) if slogan_pool else "",
+    ]
+    s = " • ".join([b for b in bits if b]).strip(" •")
+    return clamp(s, TITLE_MAX)
+
+
 def build_description(
     brand_lat: str,
     shape: str,
@@ -217,17 +193,16 @@ def build_description(
         f"{g.capitalize()} солнцезащитные очки {brand_lat} — {shape.lower()} с линзами: {lens.lower()}.",
         f"Коллекция: {collection}.",
         f"Описание {st}, {ln}, {seo}.",
-        f"Удобная посадка, аккуратные материалы, комфорт для города и путешествий.",
-        f"Линзы помогают снизить блики и повысить визуальный комфорт в яркий день.",
-        f"Подойдут к повседневному и деловому образу: лаконично, современно, уместно.",
+        "Удобная посадка, аккуратные материалы, комфорт для города и путешествий.",
+        "Линзы помогают снизить блики и повысить визуальный комфорт в яркий день.",
+        "Подойдут к повседневному и деловому образу: лаконично, современно, уместно.",
     ]
 
-    # немного вариативности
     extras = [
-        "Защита от яркого света и продуманная форма оправы.",
-        "Сбалансированный дизайн для разных типов лица.",
-        "Стильно сочетаются с классическими и casual-образами.",
+        "Продуманная форма оправы и баланс дизайна.",
+        "Сдержанный акцент, который легко сочетать с гардеробом.",
         "Практичный аксессуар на сезон и не только.",
+        "Лёгкий уход и понятная посадка.",
     ]
     random.shuffle(extras)
 
@@ -256,14 +231,11 @@ def generate_description_best_of(
     best_of: int = 8,
     uniq_strength: int = 3,
 ) -> Tuple[str, float]:
-    """
-    Возвращает (описание, score), где score — максимальный Jaccard с used_desc (чем меньше, тем лучше).
-    uniq_strength 1..5: чем больше, тем сильнее штрафуем похожие варианты.
-    """
     best_desc = ""
     best_score = 10.0
 
-    for _ in range(max(2, best_of)):
+    tries = max(2, best_of)
+    for _ in range(tries):
         d = build_description(
             brand_lat=brand_lat,
             shape=shape,
@@ -279,7 +251,6 @@ def generate_description_best_of(
         for u in used_desc[-50:]:
             score = max(score, jaccard(d, u))
 
-        # усиливаем "нелюбовь" к похожести
         score = score * (1.0 + (uniq_strength - 1) * 0.25)
 
         if score < best_score:
@@ -290,6 +261,9 @@ def generate_description_best_of(
 
 
 def find_header_col(ws, candidates: set, header_scan_rows: int = 25):
+    """
+    Ищем заголовок по равенству И по вхождению (чтобы ловить "Наименование товара" и т.п.)
+    """
     candidates = {c.strip().lower() for c in candidates}
     for r in range(1, header_scan_rows + 1):
         for cell in ws[r]:
@@ -317,19 +291,15 @@ class FillParams:
     strict_mode: bool = True
     data_dir: str = ""
     seed: Optional[int] = None
-    rows_to_fill: int = 6
-    fill_only_empty: bool = True
     uniq_strength: int = 3
 
 
-def fill_wb_template(
-    in_path: str,
-    out_path: str,
-    params: FillParams,
-) -> Dict[str, object]:
+def fill_wb_template(in_path: str, out_path: str, params: FillParams) -> Dict[str, object]:
     """
-    Заполняет XLSX: наименование + описание. Заполняет rows_to_fill строк.
-    Возвращает небольшой отчёт.
+    ЖЁСТКОЕ требование:
+      - строки 1–4 не трогаем
+      - заполняем строго строки 5–10 включительно (6 строк)
+      - всегда перезаписываем (даже если заполнено)
     """
     if params.seed is not None:
         random.seed(params.seed)
@@ -339,43 +309,25 @@ def fill_wb_template(
     wb = openpyxl.load_workbook(in_path)
     ws = wb.active
 
-    # Находим колонки
+    # Ищем колонки
     title_candidates = {"наименование", "название", "name", "title", "наименование товара"}
     desc_candidates = {"описание", "description", "описание товара", "текст"}
 
-    title_col, header_row = find_header_col(ws, title_candidates)
-    desc_col, header_row2 = find_header_col(ws, desc_candidates)
+    title_col, _ = find_header_col(ws, title_candidates)
+    desc_col, _ = find_header_col(ws, desc_candidates)
 
-    if not header_row and header_row2:
-        header_row = header_row2
-    if header_row and not header_row2:
-        header_row2 = header_row
+    if not title_col or not desc_col:
+        raise RuntimeError("Не удалось найти колонки 'Наименование/Описание' в XLSX (по заголовкам).")
 
-    if not title_col or not desc_col or not header_row:
-        raise RuntimeError("Не удалось найти колонки 'Наименование/Описание' в XLSX (заголовки).")
-
-    data_dir = params.data_dir or ""
-    brand_map = load_brands_ru_map(data_dir)
+    brand_map = load_brands_ru_map(params.data_dir or "")
     slogan_pool = SLOGANS[:]
     random.shuffle(slogan_pool)
 
     used_desc: List[str] = []
     max_scores: List[float] = []
 
-    start_row = header_row + 1
-    end_row = start_row + max(1, params.rows_to_fill) - 1
-
-    for r in range(start_row, end_row + 1):
-        title_cell = ws.cell(row=r, column=title_col)
-        desc_cell = ws.cell(row=r, column=desc_col)
-
-        if params.fill_only_empty:
-            if title_cell.value and str(title_cell.value).strip():
-                # если заголовок уже есть — можно всё равно обновить описание или пропустить.
-                pass
-            if desc_cell.value and str(desc_cell.value).strip():
-                continue
-
+    # >>> СТРОГО 5..10 (перезаписываем)
+    for r in range(5, 11):
         title = generate_title(params.brand, params.shape, params.lens, brand_map, slogan_pool)
 
         desc, score = generate_description_best_of(
@@ -399,11 +351,8 @@ def fill_wb_template(
             title = apply_strict(title)
             desc = apply_strict(desc)
 
-        title = clamp(title, TITLE_MAX)
-        desc = clamp(desc, DESC_MAX)
-
-        title_cell.value = title
-        desc_cell.value = desc
+        ws.cell(row=r, column=title_col).value = clamp(title, TITLE_MAX)
+        ws.cell(row=r, column=desc_col).value = clamp(desc, DESC_MAX)
 
         used_desc.append(desc)
         max_scores.append(score)
@@ -412,7 +361,7 @@ def fill_wb_template(
 
     avg = (sum(max_scores) / len(max_scores)) if max_scores else 0.0
     return {
-        "filled_rows": len(max_scores),
+        "filled_rows": 6,
         "avg_max_jaccard": round(avg, 4),
         "out_path": out_path,
     }
@@ -434,7 +383,7 @@ def generate_preview(
     uniq_strength: int = 3,
 ) -> Tuple[str, str]:
     """
-    Для live-preview: возвращает (title, description).
+    Для UI: live-preview (не пишет в Excel).
     """
     if used_desc is None:
         used_desc = []
@@ -444,6 +393,7 @@ def generate_preview(
     random.shuffle(slogan_pool)
 
     title = generate_title(brand_lat, shape, lens, brand_map, slogan_pool)
+
     desc, _ = generate_description_best_of(
         brand_lat=brand_lat,
         shape=shape,
