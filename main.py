@@ -1,14 +1,13 @@
-# main.py
+# main.py (FULL REPLACE)
 import sys
 import os
 import json
-import traceback
 from pathlib import Path
 
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QFileDialog,
     QVBoxLayout, QHBoxLayout, QGridLayout, QComboBox, QMessageBox,
-    QProgressBar, QFrame, QCheckBox, QLineEdit, QSpinBox, QTextEdit, QDialog
+    QProgressBar, QFrame, QLineEdit, QSpinBox, QTextEdit, QDialog
 )
 from PyQt5.QtCore import QThread, pyqtSignal, Qt
 
@@ -86,43 +85,43 @@ def add_to_list(path: Path, value: str):
 THEMES = {
     "Midnight": """
         QWidget { background:#0b1220; color:#e7eefc; font-size:13px; }
-        QLabel#Title { font-size:22px; font-weight:900; }
+        QLabel#Title { font-size:24px; font-weight:900; }
         QLabel#Subtitle { color:#aab8d6; }
         QLabel#Muted { color:#97a6c7; }
         QFrame#Card { background:#0f1a2e; border:1px solid #1f2b46; border-radius:14px; }
         QLineEdit, QComboBox, QTextEdit, QSpinBox {
-            background:#0b1426; border:1px solid #1f2b46; border-radius:10px; padding:8px;
+            background:#0b1426; border:1px solid #1f2b46; border-radius:10px; padding:10px;
         }
-        QComboBox::drop-down { border:0; width:28px; }
+        QComboBox::drop-down { border:0; width:32px; }
         QComboBox::down-arrow {
             image:none;
             border-left:6px solid transparent;
             border-right:6px solid transparent;
             border-top:8px solid #cfe1ff;
-            margin-right:8px;
+            margin-right:10px;
         }
         QPushButton#Primary {
             background:qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #6d28d9, stop:1 #8b5cf6);
-            border:0; border-radius:12px; padding:10px 14px; font-weight:800; color:#ffffff;
+            border:0; border-radius:12px; padding:12px 16px; font-weight:900; color:#ffffff;
         }
-        QPushButton#Ghost { background:#16213b; border:1px solid #24345c; border-radius:12px; padding:10px 14px; font-weight:700; }
-        QPushButton#Mini { background:#0b1426; border:1px solid #1f2b46; border-radius:10px; padding:8px 10px; font-weight:800; }
-        QProgressBar { background:#0b1426; border:1px solid #1f2b46; border-radius:10px; text-align:center; }
+        QPushButton#Ghost { background:#16213b; border:1px solid #24345c; border-radius:12px; padding:12px 16px; font-weight:800; }
+        QPushButton#Mini { background:#0b1426; border:1px solid #1f2b46; border-radius:10px; padding:10px 12px; font-weight:900; }
+        QProgressBar { background:#0b1426; border:1px solid #1f2b46; border-radius:10px; text-align:center; height:22px; }
         QProgressBar::chunk { background:#8b5cf6; border-radius:10px; }
     """,
     "Light": """
         QWidget { background:#f6f7fb; color:#12131a; font-size:13px; }
-        QLabel#Title { font-size:22px; font-weight:900; }
+        QLabel#Title { font-size:24px; font-weight:900; }
         QLabel#Subtitle { color:#55607a; }
         QLabel#Muted { color:#5f6b84; }
         QFrame#Card { background:#ffffff; border:1px solid #dfe5f1; border-radius:14px; }
-        QLineEdit, QComboBox, QTextEdit, QSpinBox { background:#ffffff; border:1px solid #dfe5f1; border-radius:10px; padding:8px; }
-        QComboBox::drop-down { border:0; width:28px; }
-        QComboBox::down-arrow { image:none; border-left:6px solid transparent; border-right:6px solid transparent; border-top:8px solid #2b61ff; margin-right:8px; }
-        QPushButton#Primary { background:#2b61ff; border:0; border-radius:12px; padding:10px 14px; font-weight:800; color:#fff; }
-        QPushButton#Ghost { background:#eef3ff; border:1px solid #d7e2ff; border-radius:12px; padding:10px 14px; font-weight:700; }
-        QPushButton#Mini { background:#ffffff; border:1px solid #dfe5f1; border-radius:10px; padding:8px 10px; font-weight:800; }
-        QProgressBar { background:#ffffff; border:1px solid #dfe5f1; border-radius:10px; text-align:center; }
+        QLineEdit, QComboBox, QTextEdit, QSpinBox { background:#ffffff; border:1px solid #dfe5f1; border-radius:10px; padding:10px; }
+        QComboBox::drop-down { border:0; width:32px; }
+        QComboBox::down-arrow { image:none; border-left:6px solid transparent; border-right:6px solid transparent; border-top:8px solid #2b61ff; margin-right:10px; }
+        QPushButton#Primary { background:#2b61ff; border:0; border-radius:12px; padding:12px 16px; font-weight:900; color:#fff; }
+        QPushButton#Ghost { background:#eef3ff; border:1px solid #d7e2ff; border-radius:12px; padding:12px 16px; font-weight:800; }
+        QPushButton#Mini { background:#ffffff; border:1px solid #dfe5f1; border-radius:10px; padding:10px 12px; font-weight:900; }
+        QProgressBar { background:#ffffff; border:1px solid #dfe5f1; border-radius:10px; text-align:center; height:22px; }
         QProgressBar::chunk { background:#2b61ff; border-radius:10px; }
     """
 }
@@ -139,8 +138,7 @@ class PreviewDialog(QDialog):
     def __init__(self, parent, items: list):
         super().__init__(parent)
         self.setWindowTitle("Примеры (3)")
-        self.setMinimumWidth(820)
-        self.setMinimumHeight(520)
+        self.resize(980, 640)
 
         lay = QVBoxLayout(self)
         text = QTextEdit()
@@ -148,7 +146,7 @@ class PreviewDialog(QDialog):
 
         out = []
         for i, (t, d) in enumerate(items, 1):
-            out.append(f"{i}) НАИМЕНОВАНИЕ:\n{t}\n\nОПИСАНИЕ:\n{d}\n\n" + ("-"*70))
+            out.append(f"{i}) НАИМЕНОВАНИЕ:\n{t}\n\nОПИСАНИЕ:\n{d}\n\n" + ("-" * 70))
         text.setPlainText("\n\n".join(out))
 
         lay.addWidget(text)
@@ -181,7 +179,8 @@ class App(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(APP_NAME)
-        self.setMinimumWidth(920)
+        self.resize(1120, 760)        # ✅ нормальный стартовый размер
+        self.setMinimumSize(980, 680) # ✅ не даст стать маленьким
 
         self.data_dir = app_data_dir()
         self.settings = load_settings()
@@ -191,8 +190,8 @@ class App(QWidget):
         self.shapes_file = self.data_dir / "shapes.txt"
         self.lenses_file = self.data_dir / "lenses.txt"
 
-        ensure_list_file(self.brands_file, ["Ray-Ban", "Gucci", "Prada", "Cazal", "Miu Miu"])
-        ensure_list_file(self.shapes_file, ["квадратные", "авиаторы", "овальные", "кошачий глаз", "круглые"])
+        ensure_list_file(self.brands_file, ["Ray-Ban", "Gucci", "Prada", "Cazal", "Miu Miu", "Dior"])
+        ensure_list_file(self.shapes_file, ["квадратные", "авиаторы", "овальные", "кошачий глаз", "круглые", "вайфареры"])
         ensure_list_file(self.lenses_file, ["UV400", "поляризационные", "фотохромные", "градиентные"])
 
         root = QVBoxLayout(self)
@@ -204,7 +203,7 @@ class App(QWidget):
         hl.setContentsMargins(16, 14, 16, 14)
         title = QLabel("🕶️ Sunglasses SEO PRO")
         title.setObjectName("Title")
-        subtitle = QLabel("Заполняет Наименование + Описание (ровно 6 строк), с живым SEO и реальным рандомом")
+        subtitle = QLabel("Живые SEO-описания • Выпадающие списки • Прогресс • Темы")
         subtitle.setObjectName("Subtitle")
         hl.addWidget(title)
         hl.addWidget(subtitle)
@@ -259,7 +258,7 @@ class App(QWidget):
         self.cmb_shape = QComboBox()
         self.cmb_lens = QComboBox()
 
-        # ВАЖНО: editable — можно печатать вручную (как ты хочешь)
+        # ✅ можно печатать вручную
         self.cmb_brand.setEditable(True)
         self.cmb_shape.setEditable(True)
         self.cmb_lens.setEditable(True)
@@ -297,7 +296,6 @@ class App(QWidget):
         self.cmb_brand_title.setCurrentText(self.settings.get("brand_title_ui", "50/50"))
         ml.addWidget(self.cmb_brand_title, 6, 1, 1, 2)
 
-        # ВСЕГДА 6 строк (показывать можно, но UI не меняем визуально сильно)
         self.spin_rows = QSpinBox()
         self.spin_rows.setMinimum(6)
         self.spin_rows.setMaximum(6)
@@ -359,12 +357,11 @@ class App(QWidget):
         self.cmb_shape.addItems(shapes)
         self.cmb_lens.addItems(lenses)
 
-        # restore
-        if self.settings.get("brand") in brands:
+        if self.settings.get("brand"):
             self.cmb_brand.setCurrentText(self.settings["brand"])
-        if self.settings.get("shape") in shapes:
+        if self.settings.get("shape"):
             self.cmb_shape.setCurrentText(self.settings["shape"])
-        if self.settings.get("lens") in lenses:
+        if self.settings.get("lens"):
             self.cmb_lens.setCurrentText(self.settings["lens"])
 
     def _brand_title_mode(self) -> str:
@@ -376,7 +373,6 @@ class App(QWidget):
         return "smart50"
 
     def _autosave_user_values(self):
-        # сохраняем то, что ты ввёл вручную в combo (без кнопки +)
         b = self.cmb_brand.currentText().strip()
         s = self.cmb_shape.currentText().strip()
         l = self.cmb_lens.currentText().strip()
@@ -409,7 +405,6 @@ class App(QWidget):
             QMessageBox.warning(self, "Файл", "Сначала выбери XLSX файл.")
             return
 
-        # сохраняем ввод пользователя
         self._autosave_user_values()
 
         b = self.cmb_brand.currentText().strip()
@@ -463,7 +458,17 @@ class App(QWidget):
 
 
 def main():
+    # ✅ High-DPI (чтобы UI не был мелким)
+    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+
     app = QApplication(sys.argv)
+
+    # ✅ базовый шрифт побольше
+    f = app.font()
+    f.setPointSize(13)
+    app.setFont(f)
+
     w = App()
     w.show()
     sys.exit(app.exec_())
