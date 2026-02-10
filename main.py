@@ -3,6 +3,7 @@ import sys
 import os
 import json
 from pathlib import Path
+from typing import Tuple
 
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QFileDialog,
