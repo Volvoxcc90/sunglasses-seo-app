@@ -1,10 +1,11 @@
 # wb_fill.py
 import json
+import os
 import random
 import re
-import os
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Tuple, Set, Optional
+from typing import Dict, List, Optional, Set, Tuple
 
 from openpyxl import load_workbook
 from openpyxl.worksheet.cell_range import MultiCellRange
@@ -12,97 +13,98 @@ from openpyxl.worksheet.cell_range import MultiCellRange
 TITLE_MAX = 60
 DESC_MAX = 2000
 
+# -----------------------------
+# GLOBALS (для пачки файлов)
+# -----------------------------
+_GLOBAL_USED_SLOGANS: Set[str] = set()
+_GLOBAL_USED_TITLE_SIGS: Set[str] = set()
+
+
+# -----------------------------
+# DATA MODEL (для совместимости)
+# -----------------------------
+@dataclass
+class FillParams:
+    input_xlsx: str
+    brand_lat: str
+    shape: str
+    lens: str
+    collection: str
+
+    style: str = "neutral"
+    desc_length: str = "medium"
+    seo_level: str = "high"
+    gender_mode: str = "Auto"
+
+    wb_safe_mode: bool = True
+    wb_strict: bool = True
+
+    uniq_strength: int = 90
+    brand_in_title_mode: str = "smart50"
+    data_dir: str = ""
+
+    max_fill_rows: int = 6
+    output_index: int = 1
+    output_total: int = 1
+    between_files_slogan_lock: bool = True
+
+
+# -----------------------------
+# POOLS
+# -----------------------------
 SLOGANS = [
     "Красивые","Крутые","Стильные","Модные","Молодёжные","Дизайнерские","Эффектные","Трендовые","Лаконичные","Яркие",
-    "Современные","Премиальные","Универсальные","Актуальные","Выразительные","Элегантные","Минималистичные","Смелые","Классные","Городские",
-    "Лёгкие","Комфортные","Популярные","Эксклюзивные","Фирменные","Изящные","Брутальные","Ультрамодные","Шикарные","Статусные",
-    "Инстаграмные","Фотогеничные","Сочные","Новые","Практичные","Надёжные","Удобные","Качественные","В тренде сезона","На каждый день",
-    "С характером","Стильный акцент","Сильный силуэт","Под базовый гардероб","Для города","Для отпуска","Для лета","Для поездок","Для фото",
-    "Хит сезона","Топовые","Повседневные","Нарядные","С эффектной оправой","С модным вайбом","Лёгкий люкс-стиль","С современным силуэтом",
-    "Вау-эффект","Прям в тему","Тот самый акцент","Собирают образ","Делают образ дороже","Сочетаются легко","Выглядят дорого",
+    "Современные","Премиальные","Универсальные","Актуальные","Выразительные","Элегантные","Смелые","Классные","Городские",
+    "Лёгкие","Комфортные","Популярные","Эксклюзивные","Фирменные","Изящные","Брутальные","Шикарные","Статусные",
+    "Инстаграмные","Фотогеничные","Сочные","Практичные","Надёжные","Удобные","Качественные","В тренде сезона",
+    "Собирают образ","Делают образ дороже","Сочетаются легко","Выглядят дорого"
 ]
 
 SUN_TERMS = ["солнцезащитные очки", "солнечные очки"]
-
-SCENARIOS = [
-    "город","путешествия","отпуск","прогулки","вождение","пляж","активный отдых","поездки","летние мероприятия",
-    "кафе","шопинг","свидание","на каждый день","для фото"
-]
-
 SEO_CORE = ["солнцезащитные очки", "солнечные очки", "очки солнцезащитные"]
 SEO_STYLE = ["брендовые очки", "модные очки", "трендовые очки", "стильные очки", "имиджевые очки"]
-SEO_USE = ["очки для вождения", "очки для города", "очки для отпуска", "очки для пляжа", "очки для прогулок"]
 SEO_SOC = ["инста очки", "очки из tiktok", "очки для фото"]
+SEO_USE = ["очки для вождения", "очки для города", "очки для отпуска", "очки для пляжа", "очки для прогулок"]
 
-STRICT_DROP = ["лучшие","самые лучшие","идеальные","100%","гарантия","гарантируем","абсолютно","безусловно","всегда","никогда","полностью"]
-SAFE_REPLACE = {"реплика":"стиль в духе бренда", "копия":"вдохновлённый дизайн", "люкс":"премиальный стиль"}
-
-STOPWORDS_RU = {"и","в","во","на","а","но","что","это","как","для","по","из","к","с","со","при","от","до","у","же","не","без","над","под","про","или","то","ли"}
-
-BLOCK_OPEN = [
-    "Очки — классное дополнение к любому образу",
-    "Эти очки реально выручают в солнечную погоду",
-    "Если нужен стильный аксессуар на каждый день — вот он",
-    "Лёгкая модель: и в городе норм, и в отпуск — самое то",
-    "Смотрятся аккуратно, но при этом заметно",
-    "Подойдут под базовый гардероб и под яркий лук",
-    "Модель выглядит трендово, но без перебора",
-    "Это тот самый аксессуар, который собирает образ в одну линию",
-    "С такими очками образ сразу выглядит дороже и аккуратнее",
-    "Универсальная модель — подходит почти под всё",
-    "Трендовая вещь, но без лишнего шума",
-    "Сидят комфортно — можно носить целый день",
+SCENARIOS = [
+    "город","прогулки","поездки","путешествия","отпуск","пляж","вождение","на каждый день","для фото","летние мероприятия"
 ]
 
-BLOCK_FRAME = [
-    "Оправа смотрится ровно и хорошо садится",
-    "Форма оправы удачная — лицо смотрится более собранно",
-    "Дизайн оправы делает образ дороже",
-    "Оправу легко сочетать с одеждой — и кэжуал, и более нарядно",
-    "Форма подчёркивает стиль и не «шумит» в образе",
-    "Сидят комфортно, не давят и не раздражают в носке",
-]
+# Слова/метки, которые НЕЛЬЗЯ видеть в описании
+FORBIDDEN_LABELS_RE = re.compile(
+    r"\b(Сценарии|Ключевые\s*слова|Форма|Линза|Линзы|Коллекция)\s*:\s*",
+    flags=re.IGNORECASE
+)
 
-BLOCK_LENS = [
-    "Линзы дают комфорт при ярком солнце",
-    "Глаза меньше устают на улице и в дороге",
-    "На солнце реально удобнее: меньше бликов и лишнего света",
-    "Под яркий день — то, что нужно",
-    "В солнечную погоду видно спокойнее и приятнее",
-]
+STOPWORDS_RU = {
+    "и","в","во","на","а","но","что","это","как","для","по","из","к","с","со","при","от","до","у","же","не","без","над","под","про","или","то","ли"
+}
 
-BLOCK_SCEN = [
-    "Хорошо заходят для города, поездок и прогулок",
-    "Удобно брать в отпуск, на пляж и на выходные",
-    "Подойдут для вождения и повседневных дел",
-    "Норм вариант для фото и сторис",
-    "Если много двигаешься — удобный формат на каждый день",
-]
-
-BLOCK_GIFT = [
-    "Можно брать себе или на подарок",
-    "Отличный подарочный вариант для девушки или парня",
-    "Если ищешь подарок — вариант рабочий",
-]
-
-BLOCK_MISC = [
-    "Футляр/комплектация могут отличаться.",
-    "Оттенок может немного отличаться из-за настроек экрана.",
-    "Детали могут отличаться в зависимости от партии.",
-]
-
-# Память между файлами пачки (в рамках одного запуска)
-_GLOBAL_USED_SLOGANS: Set[str] = set()
-
+# -----------------------------
+# UTILS
+# -----------------------------
+def _seed_hard():
+    # сильный seed каждый запуск/файл
+    random.seed(int.from_bytes(os.urandom(16), "big"))
 
 def _cut_no_break_words(text: str, limit: int) -> str:
-    text = (text or "").strip()
-    if len(text) <= limit:
-        return text
-    cut = text[:limit]
+    t = (text or "").strip()
+    if len(t) <= limit:
+        return t
+    cut = t[:limit]
     if " " not in cut:
         return cut
     return cut.rsplit(" ", 1)[0].strip()
+
+def _cap_first(text: str) -> str:
+    t = (text or "").strip()
+    if not t:
+        return t
+    # убираем невидимые/мусорные символы в начале
+    t = re.sub(r"^[\s\-\–\—\•\·\.\,]+", "", t).strip()
+    if not t:
+        return ""
+    return t[0].upper() + t[1:]
 
 def normalize_key(s: str) -> str:
     s = (s or "").strip().lower()
@@ -126,24 +128,16 @@ def brand_ru(brand_lat: str, brand_map: Dict[str, str]) -> str:
     key = normalize_key(brand_lat)
     return (brand_map.get(key) or brand_lat).strip()
 
-def apply_safe(text: str) -> str:
-    t = text
-    for a, b in SAFE_REPLACE.items():
-        t = re.sub(rf"\b{re.escape(a)}\b", b, t, flags=re.IGNORECASE)
-    return t
-
-def apply_strict(text: str) -> str:
-    t = text
-    for w in STRICT_DROP:
-        t = re.sub(rf"\b{re.escape(w)}\b", "", t, flags=re.IGNORECASE)
-    t = re.sub(r"\s{2,}", " ", t).strip()
+def _normalize_plain(text: str) -> str:
+    t = (text or "").lower()
+    t = FORBIDDEN_LABELS_RE.sub("", t)
+    t = re.sub(r"[^a-zа-яё0-9\s\-]", " ", t)
+    t = re.sub(r"\s+", " ", t).strip()
     return t
 
 def _tokens(text: str) -> Set[str]:
-    t = (text or "").lower()
-    t = re.sub(r"[^a-zа-яё0-9\s\-]", " ", t)
-    t = re.sub(r"\s+", " ", t).strip()
-    return {w for w in t.split() if len(w) >= 3 and w not in STOPWORDS_RU}
+    parts = _normalize_plain(text).split()
+    return {w for w in parts if len(w) >= 3 and w not in STOPWORDS_RU}
 
 def jaccard(a: str, b: str) -> float:
     A = _tokens(a); B = _tokens(b)
@@ -152,80 +146,34 @@ def jaccard(a: str, b: str) -> float:
     return len(A & B) / max(1, len(A | B))
 
 def uniqueness_threshold(uniq_strength: int) -> float:
-    uniq_strength = max(60, min(95, uniq_strength))
-    return 0.78 - (uniq_strength - 60) * (0.28 / 35.0)  # чуть агрессивнее
+    # 60..95 => 0.78..0.52 (агрессивнее)
+    s = max(60, min(95, int(uniq_strength)))
+    return 0.78 - (s - 60) * (0.26 / 35.0)
 
-def _sentence(s: str) -> str:
-    s = re.sub(r"\s{2,}", " ", (s or "").strip())
-    if not s:
-        return ""
-    if s[-1] not in ".!?":
-        s += "."
-    return s
-
-def _pick_seo(seo_level: str, gender_mode: str) -> Dict[str, List[str]]:
-    if seo_level == "low":
-        k_core, k_style, k_use, k_soc = 1, 1, 1, 0
-    elif seo_level == "normal":
-        k_core, k_style, k_use, k_soc = 2, 2, 2, 1
-    else:
-        k_core, k_style, k_use, k_soc = 3, 3, 3, 2
-
-    core = random.sample(SEO_CORE, k=min(k_core, len(SEO_CORE)))
-    style = random.sample(SEO_STYLE, k=min(k_style, len(SEO_STYLE)))
-    use = random.sample(SEO_USE, k=min(k_use, len(SEO_USE)))
-    soc = random.sample(SEO_SOC, k=min(k_soc, len(SEO_SOC))) if k_soc > 0 else []
-
-    if gender_mode == "Auto":
-        gender = ["очки женские", "очки мужские", "очки унисекс"]
-    elif gender_mode == "Женские":
-        gender = ["очки женские"]
-    elif gender_mode == "Мужские":
-        gender = ["очки мужские"]
-    elif gender_mode == "Унисекс":
-        gender = ["очки унисекс"]
-    else:
-        gender = ["очки унисекс"]
-
-    return {"core": core, "style": style, "use": use, "soc": soc, "gender": gender}
-
-def _normalize_plain(text: str) -> str:
-    t = (text or "").lower()
-    t = re.sub(r"[^a-zа-яё0-9\s\-]", " ", t)
-    t = re.sub(r"\s+", " ", t).strip()
-    return t
-
-def _desc_prefix(text: str, words: int = 12) -> str:
+def _desc_signature(text: str) -> str:
     t = _normalize_plain(text)
-    parts = t.split()
-    return " ".join(parts[:max(8, words)])
-
-def _desc_signature(text: str, words: int = 22) -> str:
-    """
-    Более жёсткая подпись:
-    - первые N слов
-    - + 6 самых частых слов (кроме стоп-слов)
-    """
-    t = _normalize_plain(text)
-    parts = t.split()
-    pref = " ".join(parts[:max(12, words)])
-    # топ-слова
+    words = t.split()
+    pref = " ".join(words[:22])
+    # top words
     freq: Dict[str, int] = {}
-    for w in parts:
+    for w in words:
         if len(w) < 4 or w in STOPWORDS_RU:
             continue
         freq[w] = freq.get(w, 0) + 1
-    top = sorted(freq.items(), key=lambda x: (-x[1], x[0]))[:6]
-    top_words = " ".join([w for w, _ in top])
-    return (pref + " | " + top_words).strip()
+    top = " ".join([w for w, _ in sorted(freq.items(), key=lambda x: (-x[1], x[0]))[:6]])
+    return (pref + " | " + top).strip()
 
-def _pick_slogan_between_files(pool: List[str]) -> str:
+def _pick_slogan(pool: List[str], lock_between_files: bool) -> str:
     global _GLOBAL_USED_SLOGANS
 
     if not pool:
         pool.extend(SLOGANS)
         random.shuffle(pool)
 
+    if not lock_between_files:
+        return pool.pop()
+
+    # ищем неиспользованный между файлами
     for _ in range(len(pool) * 2):
         s = pool.pop()
         if s not in _GLOBAL_USED_SLOGANS:
@@ -239,193 +187,14 @@ def _pick_slogan_between_files(pool: List[str]) -> str:
     _GLOBAL_USED_SLOGANS.add(s)
     return s
 
-def generate_title(
-    brand_lat: str,
-    shape: str,
-    lens: str,
-    collection: str,
-    brand_map: Dict[str, str],
-    slogan_pool: List[str],
-    brand_in_title_mode: str = "smart50",
-    between_files_slogan_lock: bool = True,
-) -> str:
-    b_ru = brand_ru(brand_lat, brand_map)
-
-    slogan = _pick_slogan_between_files(slogan_pool) if between_files_slogan_lock else (
-        (slogan_pool.pop() if slogan_pool else random.choice(SLOGANS))
-    )
-
-    sun = random.choice(SUN_TERMS)
-
-    parts = [slogan, sun]
-
-    if brand_in_title_mode == "always":
-        put_brand = True
-    elif brand_in_title_mode == "never":
-        put_brand = False
-    else:
-        put_brand = (random.random() < 0.5)
-
-    if put_brand and b_ru:
-        parts.append(b_ru)
-
-    if shape and random.random() < 0.70:
-        parts.append(shape)
-    if lens and random.random() < 0.55:
-        parts.append(lens)
-
-    title = " ".join([p for p in parts if p]).strip()
-    title = re.sub(r"\s{2,}", " ", title)
-    title = title[:1].upper() + title[1:]
-    return _cut_no_break_words(title, TITLE_MAX)
-
-def build_description_variant(
-    brand_lat: str,
-    shape: str,
-    lens: str,
-    collection: str,
-    seo_level: str,
-    gender_mode: str,
-    structure_id: int,
-) -> Tuple[str, str]:
-    """
-    Возвращает (описание, структура)
-    structure нужен, чтобы НЕ повторять один и тот же "скелет" текста.
-    """
-    seo = _pick_seo(seo_level, gender_mode)
-    scen = random.sample(SCENARIOS, 4)
-
-    head_core = random.choice(seo["core"]) if seo["core"] else "солнцезащитные очки"
-
-    # блоки
-    b_open = _sentence(f"{head_core.capitalize()} {brand_lat} — {random.choice(BLOCK_OPEN).lower()}")
-    b_shape = _sentence(f"Форма {shape} — {random.choice(BLOCK_FRAME).lower()}") if shape else _sentence(random.choice(BLOCK_FRAME))
-    b_lens = _sentence(f"Линзы {lens}: {random.choice(BLOCK_LENS).lower()}") if lens else _sentence(random.choice(BLOCK_LENS))
-    b_coll = _sentence(f"Под сезон {collection} — смотрятся актуально") if collection else ""
-    use_phrase = random.choice(seo["use"]) if seo["use"] else "очки для города"
-    b_scen = _sentence(f"{random.choice(BLOCK_SCEN).rstrip('.')} — особенно если нужны {use_phrase}")
-    b_list = _sentence(f"Подойдут для: {', '.join(scen)}")
-
-    tail_bits = []
-    if seo["style"]:
-        tail_bits.append(random.choice(seo["style"]))
-    if seo["gender"]:
-        tail_bits.append(random.choice(seo["gender"]))
-    if seo["soc"] and random.random() < 0.60:
-        tail_bits.append(random.choice(seo["soc"]))
-    if seo["core"] and random.random() < 0.70:
-        tail_bits.append(random.choice(seo["core"]))
-    b_tail = _sentence("Ищут как: " + ", ".join(tail_bits)) if tail_bits else ""
-
-    b_gift = _sentence(random.choice(BLOCK_GIFT))
-    b_misc = _sentence(random.choice(BLOCK_MISC)) if random.random() < 0.35 else ""
-
-    # 6 разных структур (скелетов)
-    structs = [
-        ("OPEN>SHAPE>LENS>SCEN>LIST>TAIL>GIFT>MISC", [b_open, b_shape, b_lens, b_scen, b_list, b_tail, b_gift, b_misc]),
-        ("OPEN>LENS>SHAPE>COLL>SCEN>TAIL>LIST>GIFT", [b_open, b_lens, b_shape, b_coll, b_scen, b_tail, b_list, b_gift]),
-        ("OPEN>SCEN>SHAPE>LENS>TAIL>GIFT>LIST",      [b_open, b_scen, b_shape, b_lens, b_tail, b_gift, b_list]),
-        ("OPEN>SHAPE>SCEN>TAIL>LENS>LIST>GIFT",      [b_open, b_shape, b_scen, b_tail, b_lens, b_list, b_gift]),
-        ("OPEN>LENS>SCEN>LIST>SHAPE>TAIL>GIFT",      [b_open, b_lens, b_scen, b_list, b_shape, b_tail, b_gift]),
-        ("OPEN>COLL>SHAPE>LENS>TAIL>SCEN>LIST>GIFT", [b_open, b_coll, b_shape, b_lens, b_tail, b_scen, b_list, b_gift]),
-    ]
-
-    idx = structure_id % len(structs)
-    struct_name, blocks = structs[idx]
-
-    blocks = [b for b in blocks if b]  # убрать пустые
-    # чуть случайности внутри структуры (но не ломаем порядок полностью)
-    if len(blocks) > 5 and random.random() < 0.6:
-        # переставим местами 2 соседних блока (кроме первого)
-        j = random.randint(1, len(blocks)-2)
-        blocks[j], blocks[j+1] = blocks[j+1], blocks[j]
-
-    text = " ".join(blocks).strip()
-    text = re.sub(r"\s{2,}", " ", text)
-
-    text = re.sub(r"\b(Сценарии|Ключевые слова|Форма|Линза|Коллекция)\s*:\s*", "", text, flags=re.IGNORECASE)
-    return _cut_no_break_words(text, DESC_MAX), struct_name
-
-def generate_best_description_strict(
-    brand_lat: str,
-    shape: str,
-    lens: str,
-    collection: str,
-    seo_level: str,
-    gender_mode: str,
-    used_desc: List[str],
-    uniq_strength: int,
-    used_prefixes: Set[str],
-    used_signatures: Set[str],
-    used_structs: Set[str],
-    target_struct_id: int,
-    prefix_words: int = 12,
-    signature_words: int = 22,
-    tries: int = 120,
-) -> Tuple[str, float]:
-    """
-    Жёсткий режим: должен получить реально другой текст.
-    Проверяем:
-      - prefix (первые слова)
-      - signature (первые 22 слова + топ-слова)
-      - структура (скелет)
-      - Jaccard к прошлым
-    """
-    thr = uniqueness_threshold(uniq_strength)
-    best_text = ""
-    best_score = 1.0
-
-    for _ in range(tries):
-        cand, struct_name = build_description_variant(
-            brand_lat, shape, lens, collection, seo_level, gender_mode, structure_id=target_struct_id
-        )
-
-        pref = _desc_prefix(cand, words=prefix_words)
-        if pref in used_prefixes:
-            continue
-
-        sig = _desc_signature(cand, words=signature_words)
-        if sig in used_signatures:
-            continue
-
-        # чтобы 6 строк точно отличались структурно
-        if struct_name in used_structs:
-            # разрешим повторы структуры только если пул исчерпали
-            if len(used_structs) < 6:
-                continue
-
-        if not used_desc:
-            used_prefixes.add(pref); used_signatures.add(sig); used_structs.add(struct_name)
-            return cand, 0.0
-
-        mx = max(jaccard(cand, prev) for prev in used_desc)
-        if mx <= thr:
-            used_prefixes.add(pref); used_signatures.add(sig); used_structs.add(struct_name)
-            return cand, mx
-
-        if mx < best_score:
-            best_score = mx
-            best_text = cand
-
-    # fallback: хоть самый непохожий
-    if best_text:
-        used_prefixes.add(_desc_prefix(best_text, words=prefix_words))
-        used_signatures.add(_desc_signature(best_text, words=signature_words))
-        return best_text, best_score
-
-    return build_description_variant(brand_lat, shape, lens, collection, seo_level, gender_mode, target_struct_id)[0], 1.0
-
 def _fix_merged_cells(ws):
     try:
         if isinstance(ws.merged_cells, MultiCellRange):
             return
         old = ws.merged_cells
         fixed = MultiCellRange()
-        try:
-            for r in list(old):
-                fixed.add(str(r))
-        except Exception:
-            pass
+        for r in list(old):
+            fixed.add(str(r))
         ws.merged_cells = fixed
     except Exception:
         pass
@@ -469,6 +238,221 @@ def read_output_dir(data_dir: str) -> Optional[str]:
     except Exception:
         return None
 
+
+# -----------------------------
+# TITLE GENERATOR
+# -----------------------------
+def generate_title(
+    brand_lat: str,
+    shape: str,
+    lens: str,
+    brand_map: Dict[str, str],
+    brand_in_title_mode: str,
+    slogan_pool: List[str],
+    lock_between_files: bool,
+) -> str:
+    b_ru = brand_ru(brand_lat, brand_map)
+    slogan = _pick_slogan(slogan_pool, lock_between_files)
+    sun = random.choice(SUN_TERMS)
+
+    if brand_in_title_mode == "always":
+        put_brand = True
+    elif brand_in_title_mode == "never":
+        put_brand = False
+    else:
+        put_brand = (random.random() < 0.5)
+
+    parts = [slogan, sun]
+
+    # бренд кириллицей только в названии (как ты просил)
+    if put_brand and b_ru:
+        parts.append(b_ru)
+
+    # добавки (форма/линза) — но не одинаково каждый раз
+    if shape and random.random() < 0.70:
+        parts.append(shape)
+    if lens and random.random() < 0.60:
+        parts.append(lens)
+
+    title = " ".join([p for p in parts if p]).strip()
+    title = re.sub(r"\s{2,}", " ", title)
+    title = _cap_first(title)
+    return _cut_no_break_words(title, TITLE_MAX)
+
+
+# -----------------------------
+# “НАРОДНОЕ” ОПИСАНИЕ (SEO)
+# -----------------------------
+def build_desc(
+    brand_lat: str,
+    shape: str,
+    lens: str,
+    collection: str,
+    seo_level: str,
+    gender_mode: str,
+    variant_id: int,
+) -> Tuple[str, str]:
+    """
+    Возвращает (description, struct_key)
+    variant_id позволяет сделать 6 реально разных “подач”.
+    """
+
+    # SEO плотность
+    if seo_level == "low":
+        core_n, style_n, use_n, soc_n = 1, 1, 1, 0
+    elif seo_level == "normal":
+        core_n, style_n, use_n, soc_n = 2, 2, 2, 1
+    else:
+        core_n, style_n, use_n, soc_n = 3, 3, 3, 2
+
+    core = random.sample(SEO_CORE, k=min(core_n, len(SEO_CORE)))
+    style = random.sample(SEO_STYLE, k=min(style_n, len(SEO_STYLE)))
+    use = random.sample(SEO_USE, k=min(use_n, len(SEO_USE)))
+    soc = random.sample(SEO_SOC, k=min(soc_n, len(SEO_SOC))) if soc_n else []
+
+    if gender_mode == "Женские":
+        gender_kw = "очки женские"
+    elif gender_mode == "Мужские":
+        gender_kw = "очки мужские"
+    elif gender_mode == "Унисекс":
+        gender_kw = "очки унисекс"
+    else:
+        gender_kw = random.choice(["очки женские", "очки мужские", "очки унисекс"])
+
+    scen = ", ".join(random.sample(SCENARIOS, 4))
+
+    # Фразы (разные стили “как маркетплейсы”)
+    openers = [
+        f"{brand_lat} — очки, которые реально выручают в солнце и сразу собирают образ.",
+        f"Если нужны {random.choice(core)} на каждый день — {brand_lat} прям в тему.",
+        f"{brand_lat}: удобные {random.choice(core)}, которые выглядят аккуратно и дорого.",
+        f"Очки {brand_lat} — стильный акцент на сезон, который легко носить каждый день.",
+    ]
+    shape_line = [
+        f"Оправа {shape} — смотрится ровно, подчёркивает лицо и не выглядит громоздко.",
+        f"Форма {shape} хорошо садится и подходит под базовый гардероб.",
+        f"{shape} — трендовая форма, которая делает образ более собранным.",
+    ] if shape else [
+        "Оправа выглядит аккуратно и легко сочетается с одеждой.",
+        "Посадка комфортная — можно носить целый день.",
+    ]
+
+    lens_line = [
+        f"Линзы {lens} дают комфорт при ярком солнце — глаза меньше устают.",
+        f"{lens} — хороший вариант для города и поездок, когда на улице ярко.",
+        f"С линзами {lens} реально удобнее: меньше лишнего света и бликов.",
+    ] if lens else [
+        "Линзы комфортные в солнечную погоду.",
+        "В яркий день носить удобно и спокойно.",
+    ]
+
+    coll_line = [
+        f"Сезон {collection}: модель выглядит актуально и подходит под летний стиль.",
+        f"На сезон {collection} — отличный вариант, чтобы обновить аксессуары.",
+    ] if collection else []
+
+    # “ключи” не списком, а “вшиты”
+    seo_line = [
+        f"Ищут так: {', '.join(core[:1] + style[:1] + [gender_kw])}.",
+        f"По запросам: {', '.join([random.choice(core), random.choice(style), random.choice(use)])}.",
+        f"Под фото и сторис: {', '.join(style[:1] + soc[:1] if soc else style[:1])}.",
+    ]
+
+    close_line = [
+        f"Подойдут для: {scen}. Можно брать себе или на подарок.",
+        f"Норм вариант и в город, и в отпуск: {scen}. Отличный подарок тоже.",
+        f"Под ежедневный стиль и поездки: {scen}. Берут себе и как подарок.",
+    ]
+
+    # 6 разных структур, чтобы не было “3 одинаковых”
+    structures = [
+        ("A", [random.choice(openers), random.choice(shape_line), random.choice(lens_line)] + coll_line + [random.choice(close_line), random.choice(seo_line)]),
+        ("B", [random.choice(openers), random.choice(lens_line), random.choice(shape_line), random.choice(seo_line), random.choice(close_line)] + coll_line),
+        ("C", [random.choice(openers)] + coll_line + [random.choice(shape_line), random.choice(close_line), random.choice(seo_line), random.choice(lens_line)]),
+        ("D", [random.choice(openers), random.choice(seo_line), random.choice(shape_line), random.choice(lens_line), random.choice(close_line)] + coll_line),
+        ("E", [random.choice(openers), random.choice(close_line), random.choice(shape_line)] + coll_line + [random.choice(lens_line), random.choice(seo_line)]),
+        ("F", [random.choice(openers), random.choice(shape_line), random.choice(seo_line), random.choice(close_line), random.choice(lens_line)] + coll_line),
+    ]
+
+    struct_key, parts = structures[variant_id % len(structures)]
+
+    text = " ".join([p.strip() for p in parts if p and p.strip()]).strip()
+    text = FORBIDDEN_LABELS_RE.sub("", text)  # ещё раз вычищаем метки
+    text = re.sub(r"\s{2,}", " ", text).strip()
+    text = _cap_first(text)
+
+    return _cut_no_break_words(text, DESC_MAX), struct_key
+
+
+def generate_unique_descs(
+    brand_lat: str,
+    shape: str,
+    lens: str,
+    collection: str,
+    seo_level: str,
+    gender_mode: str,
+    uniq_strength: int,
+    need: int,
+) -> List[str]:
+    """
+    Генерирует ровно need описаний:
+      - разные структуры (A..F)
+      - подпись + Jaccard против уже сгенеренных
+      - запрещаем повтор одинаковых “подписей”
+    """
+    thr = uniqueness_threshold(uniq_strength)
+    used: List[str] = []
+    used_sigs: Set[str] = set()
+    used_structs: Set[str] = set()
+
+    for i in range(need):
+        best = None
+        best_mx = 1.0
+
+        for _ in range(160):
+            cand, struct = build_desc(brand_lat, shape, lens, collection, seo_level, gender_mode, variant_id=i)
+            sig = _desc_signature(cand)
+
+            if sig in used_sigs:
+                continue
+
+            # на 6 строк — стараемся держать разные структуры
+            if struct in used_structs and len(used_structs) < need:
+                continue
+
+            if not used:
+                used.append(cand)
+                used_sigs.add(sig)
+                used_structs.add(struct)
+                best = cand
+                best_mx = 0.0
+                break
+
+            mx = max(jaccard(cand, prev) for prev in used)
+            if mx <= thr:
+                used.append(cand)
+                used_sigs.add(sig)
+                used_structs.add(struct)
+                best = cand
+                best_mx = mx
+                break
+
+            if mx < best_mx:
+                best = cand
+                best_mx = mx
+
+        # fallback (всё равно добавляем лучший найденный)
+        if best is None:
+            best, _ = build_desc(brand_lat, shape, lens, collection, seo_level, gender_mode, variant_id=i)
+        used.append(best)
+        used_sigs.add(_desc_signature(best))
+
+    return used[:need]
+
+
+# -----------------------------
+# MAIN FILL
+# -----------------------------
 def fill_wb_template(
     input_xlsx: str,
     brand_lat: str,
@@ -481,7 +465,7 @@ def fill_wb_template(
     gender_mode: str = "Auto",
     wb_safe_mode: bool = True,
     wb_strict: bool = True,
-    uniq_strength: int = 88,          # дефолт повышен
+    uniq_strength: int = 90,
     brand_in_title_mode: str = "smart50",
     data_dir: str = "",
     progress_callback=None,
@@ -490,10 +474,15 @@ def fill_wb_template(
     output_total: int = 1,
     between_files_slogan_lock: bool = True,
 ) -> Tuple[str, int, dict]:
+
+    # Поддержка старых вызовов: fill_wb_template(FillParams(...))
+    if not isinstance(input_xlsx, str) and input_xlsx is not None and hasattr(input_xlsx, "__dict__"):
+        return fill_wb_template(**dict(input_xlsx.__dict__))
+
     if not input_xlsx:
         raise RuntimeError("Файл XLSX не выбран")
 
-    random.seed(int.from_bytes(os.urandom(8), "big"))
+    _seed_hard()
 
     wb = load_workbook(input_xlsx, data_only=False, keep_links=False)
     ws = wb.active
@@ -509,76 +498,62 @@ def fill_wb_template(
         raise RuntimeError("Не найдены колонки Наименование и/или Описание (проверь заголовки)")
 
     header_row = hr1 or hr2 or 1
-    start_row = max(header_row + 1, 5)  # не трогаем 1–4 строки
+    start_row = max(header_row + 1, 5)  # 1–4 не трогаем
 
-    total_available = ws.max_row - start_row + 1
-    if total_available <= 0:
-        raise RuntimeError("Нет строк для заполнения (после заголовка)")
-
-    total_rows = min(max(1, int(max_fill_rows)), total_available)
+    # РОВНО 6 строк (или сколько max_fill_rows), не больше
+    max_fill_rows = int(max_fill_rows) if max_fill_rows else 6
+    total_rows = max(1, min(max_fill_rows, max(1, ws.max_row - start_row + 1)))
 
     brand_map = load_brands_ru_map(data_dir) if data_dir else {}
     slogan_pool = SLOGANS[:]
     random.shuffle(slogan_pool)
 
-    used_titles: Set[str] = set()
-    used_desc: List[str] = []
-    used_prefixes: Set[str] = set()
-    used_signatures: Set[str] = set()
-    used_structs: Set[str] = set()
+    # генерим 6 уникальных описаний одним пакетом (чтобы точно не повторялись)
+    descs = generate_unique_descs(
+        brand_lat=brand_lat,
+        shape=shape,
+        lens=lens,
+        collection=collection,
+        seo_level=seo_level,
+        gender_mode=gender_mode,
+        uniq_strength=uniq_strength,
+        need=total_rows,
+    )
 
-    sum_mx = 0.0
+    used_titles: Set[str] = set()
     processed = 0
 
     for i in range(total_rows):
         r = start_row + i
 
-        # Название: уникальное (в рамках файла)
+        # title unique
         t = None
-        for _k in range(220):
+        for _ in range(260):
             tt = generate_title(
-                brand_lat, shape, lens, collection, brand_map, slogan_pool,
+                brand_lat=brand_lat,
+                shape=shape,
+                lens=lens,
+                brand_map=brand_map,
                 brand_in_title_mode=brand_in_title_mode,
-                between_files_slogan_lock=between_files_slogan_lock
+                slogan_pool=slogan_pool,
+                lock_between_files=between_files_slogan_lock,
             )
-            if tt not in used_titles:
+            # ещё подпись, чтобы не было дубля по смыслу
+            sig = _normalize_plain(tt)
+            if tt not in used_titles and sig not in _GLOBAL_USED_TITLE_SIGS:
                 t = tt
                 used_titles.add(tt)
+                _GLOBAL_USED_TITLE_SIGS.add(sig)
                 break
         if t is None:
             t = generate_title(
-                brand_lat, shape, lens, collection, brand_map, slogan_pool,
-                brand_in_title_mode=brand_in_title_mode,
-                between_files_slogan_lock=between_files_slogan_lock
+                brand_lat, shape, lens, brand_map,
+                brand_in_title_mode, slogan_pool, between_files_slogan_lock
             )
 
-        # Описание: жёстко делаем 6 разных
-        d, mx = generate_best_description_strict(
-            brand_lat=brand_lat,
-            shape=shape,
-            lens=lens,
-            collection=collection,
-            seo_level=seo_level,
-            gender_mode=gender_mode,
-            used_desc=used_desc,
-            uniq_strength=uniq_strength,
-            used_prefixes=used_prefixes,
-            used_signatures=used_signatures,
-            used_structs=used_structs,
-            target_struct_id=i,          # разные структуры для разных строк
-            prefix_words=12,
-            signature_words=22,
-            tries=140,
-        )
-        used_desc.append(d)
-        sum_mx += float(mx)
-
-        if wb_safe_mode:
-            t = apply_safe(t)
-            d = apply_safe(d)
-        if wb_strict:
-            t = apply_strict(t)
-            d = apply_strict(d)
+        d = descs[i]
+        d = FORBIDDEN_LABELS_RE.sub("", d)  # финальная зачистка
+        d = _cap_first(d)
 
         ws.cell(row=r, column=col_title).value = t
         ws.cell(row=r, column=col_desc).value = d
@@ -591,30 +566,19 @@ def fill_wb_template(
 
     src = Path(input_xlsx)
     out_dir = read_output_dir(data_dir) if data_dir else None
-
     base_name = src.stem + "_ready"
-    if output_total and output_total > 1:
-        file_name = f"{base_name}_{output_index:02d}.xlsx"
-    else:
-        file_name = f"{base_name}.xlsx"
-
+    file_name = f"{base_name}_{output_index:02d}.xlsx" if output_total and output_total > 1 else f"{base_name}.xlsx"
     out_path = str((Path(out_dir) / file_name) if out_dir else src.with_name(file_name))
+
     wb.save(out_path)
 
-    report = {
+    return out_path, processed, {
         "rows_filled": processed,
-        "max_fill_rows": max_fill_rows,
-        "avg_max_jaccard": round(sum_mx / max(1, processed), 3),
+        "max_fill_rows": total_rows,
         "uniq_strength": uniq_strength,
-        "unique_prefixes": len(used_prefixes),
-        "unique_signatures": len(used_signatures),
-        "unique_structs": len(used_structs),
-        "brand_in_title_mode": brand_in_title_mode,
-        "file_index": output_index,
-        "file_total": output_total,
         "output_dir": out_dir or "",
     }
-    return out_path, processed, report
+
 
 def generate_preview(
     brand_lat: str,
@@ -623,56 +587,34 @@ def generate_preview(
     collection: str,
     seo_level: str = "high",
     gender_mode: str = "Auto",
-    uniq_strength: int = 88,
+    uniq_strength: int = 90,
     brand_in_title_mode: str = "smart50",
     data_dir: str = "",
     count: int = 3,
 ) -> list:
     """
-    Возвращает список [(title, desc), ...] для UI.
+    UI обычно ждёт list[(title, desc)].
     """
-    random.seed(int.from_bytes(os.urandom(8), "big"))
-
+    _seed_hard()
     brand_map = load_brands_ru_map(data_dir) if data_dir else {}
     slogan_pool = SLOGANS[:]
     random.shuffle(slogan_pool)
 
-    used_titles = set()
-    used_desc: List[str] = []
-    used_prefixes: Set[str] = set()
-    used_signatures: Set[str] = set()
-    used_structs: Set[str] = set()
+    descs = generate_unique_descs(
+        brand_lat, shape, lens, collection,
+        seo_level=seo_level, gender_mode=gender_mode,
+        uniq_strength=uniq_strength, need=max(1, int(count))
+    )
 
+    used_titles = set()
     out = []
     for i in range(max(1, int(count))):
-        t = None
-        for _k in range(150):
-            tt = generate_title(
-                brand_lat, shape, lens, collection, brand_map, slogan_pool,
-                brand_in_title_mode=brand_in_title_mode,
-                between_files_slogan_lock=False
-            )
-            if tt not in used_titles:
-                t = tt
-                used_titles.add(tt)
-                break
-        if t is None:
-            t = generate_title(
-                brand_lat, shape, lens, collection, brand_map, slogan_pool,
-                brand_in_title_mode=brand_in_title_mode,
-                between_files_slogan_lock=False
-            )
-
-        d, _mx = generate_best_description_strict(
-            brand_lat, shape, lens, collection, seo_level, gender_mode,
-            used_desc=used_desc,
-            uniq_strength=uniq_strength,
-            used_prefixes=used_prefixes,
-            used_signatures=used_signatures,
-            used_structs=used_structs,
-            target_struct_id=i,
-            tries=90,
+        t = generate_title(
+            brand_lat, shape, lens, brand_map,
+            brand_in_title_mode, slogan_pool, lock_between_files=False
         )
-        used_desc.append(d)
-        out.append((t, d))
+        if t in used_titles:
+            t = t + " "
+        used_titles.add(t)
+        out.append((t, _cap_first(descs[i])))
     return out
