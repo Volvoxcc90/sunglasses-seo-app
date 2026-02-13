@@ -1,4 +1,4 @@
-# wb_fill.py
+# wb_fill.py (FULL REPLACE)
 from __future__ import annotations
 
 import json
@@ -17,7 +17,6 @@ DESC_MAX = 2000
 
 ProgressCB = Optional[Callable[[float], None]]
 
-# Убираем любые служебные слова, если вдруг откуда-то прилетят
 FORBIDDEN_LABELS_RE = re.compile(
     r"\b(Коллекция|Сценарии|Линзы|Линза|Форма|Ключевые\s*слова|Характеристики)\s*:\s*",
     flags=re.IGNORECASE
@@ -36,6 +35,7 @@ class FillParams:
     shape: str
     lens: str
     collection: str
+    holiday: str = ""
 
     seo_level: str = "high"               # low/normal/high
     gender_mode: str = "Auto"             # Auto/Женские/Мужские/Унисекс
@@ -62,6 +62,7 @@ def fill_wb_template(
     shape: str,
     lens: str,
     collection: str,
+    holiday: str = "",
     seo_level: str = "high",
     gender_mode: str = "Auto",
     uniq_strength: int = 90,
@@ -74,7 +75,7 @@ def fill_wb_template(
     between_files_slogan_lock: bool = True,
     progress_callback: ProgressCB = None,
 ) -> Tuple[str, int, dict]:
-    # поддержка старых вызовов: fill_wb_template(FillParams(...))
+    # support call fill_wb_template(FillParams(...))
     if not isinstance(input_xlsx, str) and hasattr(input_xlsx, "__dict__"):
         return fill_wb_template(**dict(input_xlsx.__dict__))
 
@@ -84,6 +85,7 @@ def fill_wb_template(
         shape=shape,
         lens=lens,
         collection=collection,
+        holiday=holiday,
         seo_level=seo_level,
         gender_mode=gender_mode,
         uniq_strength=int(uniq_strength),
@@ -103,6 +105,7 @@ def generate_preview(
     shape: str,
     lens: str,
     collection: str,
+    holiday: str = "",
     seo_level: str = "high",
     gender_mode: str = "Auto",
     uniq_strength: int = 90,
@@ -111,11 +114,9 @@ def generate_preview(
     count: int = 3,
 ) -> List[Tuple[str, str]]:
     st = _RunState(
-        seed=_seed_for("preview", 1),
+        seed=_seed_for("preview"),
         data_dir=data_dir,
         between_files_slogan_lock=False,
-        file_index=1,
-        file_total=1,
     )
     items = []
     for _ in range(max(1, int(count))):
@@ -124,6 +125,7 @@ def generate_preview(
             shape=shape,
             lens=lens,
             collection=collection,
+            holiday=holiday,
             seo_level=seo_level,
             gender_mode=gender_mode,
             uniq_strength=int(uniq_strength),
@@ -150,27 +152,24 @@ def _fill_xlsx(p: FillParams, progress_callback: ProgressCB) -> Tuple[str, int, 
     if not name_col or not desc_col:
         raise RuntimeError("не найдены колонки наименование и/или описание")
 
-    # строго 6 строк
-    rows_to_fill = 6 if p.max_fill_rows != 6 else 6
+    rows_to_fill = 6  # строго 6
     start_row = p.skip_top_rows + 1
     end_row = start_row + rows_to_fill - 1
 
     out_path = _make_output_name(in_path, p.output_index, p.output_total)
 
     st = _RunState(
-        seed=_seed_for(in_path.name, p.output_index),
+        seed=_seed_for(in_path.name + f"#{p.output_index}"),
         data_dir=p.data_dir,
         between_files_slogan_lock=p.between_files_slogan_lock,
-        file_index=p.output_index,
-        file_total=p.output_total,
     )
 
-    # генерим пакет из 6 уникальных описаний заранее (100% анти-повторы внутри файла)
     descs = _generate_unique_descs(
         brand_lat=p.brand_lat,
         shape=p.shape,
         lens=p.lens,
         collection=p.collection,
+        holiday=p.holiday,
         seo_level=p.seo_level,
         gender_mode=p.gender_mode,
         uniq_strength=p.uniq_strength,
@@ -187,10 +186,8 @@ def _fill_xlsx(p: FillParams, progress_callback: ProgressCB) -> Tuple[str, int, 
             brand_in_title_mode=p.brand_in_title_mode,
             st=st,
         )
-        desc = descs[i]
-
         ws.cell(row=r, column=name_col).value = title
-        ws.cell(row=r, column=desc_col).value = desc
+        ws.cell(row=r, column=desc_col).value = descs[i]
 
         done += 1
         if progress_callback:
@@ -201,14 +198,17 @@ def _fill_xlsx(p: FillParams, progress_callback: ProgressCB) -> Tuple[str, int, 
 
 
 def _find_cols(ws, header_rows: int) -> Tuple[Optional[int], Optional[int]]:
-    want_name = {"наименование", "название", "наименование товара", "название товара", "title"}
-    want_desc = {"описание", "описание товара", "description", "desc"}
+    want_name = {
+        "наименование", "название", "наименование товара", "название товара", "title"
+    }
+    want_desc = {
+        "описание", "описание товара", "description", "desc"
+    }
 
     name_col = None
     desc_col = None
 
-    scan_rows = max(1, int(header_rows))
-    for r in range(1, scan_rows + 1):
+    for r in range(1, max(1, int(header_rows)) + 1):
         for c in range(1, ws.max_column + 1):
             v = ws.cell(row=r, column=c).value
             if v is None:
@@ -234,30 +234,25 @@ def _make_output_name(in_path: Path, idx: int, total: int) -> Path:
 
 
 # ----------------------------
-# Random State + Cross-batch locks
+# Random State + Locks
 # ----------------------------
 
-def _seed_for(seed_extra: str, file_index: int) -> int:
-    # стабильно разные сиды на каждый файл, но непредсказуемо между запусками
+def _seed_for(seed_extra: str) -> int:
     mix = int.from_bytes(os.urandom(8), "big")
     h = (hash(seed_extra) & 0xFFFFFFFF)
-    return (mix ^ h ^ (file_index * 2654435761)) & 0xFFFFFFFF
+    return (mix ^ h) & 0xFFFFFFFF
 
 
 class _RunState:
-    def __init__(self, seed: int, data_dir: str, between_files_slogan_lock: bool, file_index: int, file_total: int):
+    def __init__(self, seed: int, data_dir: str, between_files_slogan_lock: bool):
         self.rng = random.Random(seed)
         self.data_dir = data_dir or ""
-        self.file_index = file_index
-        self.file_total = file_total
+        self.between_files_slogan_lock = between_files_slogan_lock
 
-        # анти-повторы внутри файла
         self.used_title_sigs: Set[str] = set()
         self.used_desc_prefixes: Set[str] = set()
         self.used_desc_sigs: Set[str] = set()
 
-        # анти-повторы между файлами пачки
-        self.between_files_slogan_lock = between_files_slogan_lock
         self.global_slogans: Set[str] = set()
         self.lock_path: Optional[Path] = None
         if between_files_slogan_lock and self.data_dir:
@@ -290,10 +285,9 @@ class _RunState:
 
 def _nk(s: str) -> str:
     s = (s or "").strip().lower()
-    s = s.replace("&", " ")
-    s = s.replace("-", " ")
-    s = re.sub(r"\s+", " ", s)
-    return s.strip()
+    s = s.replace("&", " ").replace("-", " ")
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
 
 
 def _load_brand_ru_map(data_dir: str) -> Dict[str, str]:
@@ -376,14 +370,13 @@ def _desc_signature(text: str) -> str:
 
 
 def _uni_thr(uniq_strength: int) -> float:
-    # base ~0.52..0.78, делаем строже для 100% уникальности
     s = max(60, min(95, int(uniq_strength)))
     base = 0.78 - (s - 60) * (0.26 / 35.0)
-    return max(0.38, base - 0.18)  # <- строго!
+    return max(0.38, base - 0.18)  # строго
 
 
 # ----------------------------
-# Title generator (лозунг + очки + (форма) + (бренд RU) + (линза))
+# Title generator
 # ----------------------------
 
 def _gen_title(brand_lat: str, shape: str, lens: str, brand_in_title_mode: str, st: _RunState) -> str:
@@ -395,7 +388,6 @@ def _gen_title(brand_lat: str, shape: str, lens: str, brand_in_title_mode: str, 
         "На каждый день","На лето","В тренде сезона"
     ]
 
-    # выбор слогана: избегаем повторов между файлами пачки (если включено)
     st.rng.shuffle(slogans)
     slogan = None
     for _ in range(80):
@@ -408,14 +400,12 @@ def _gen_title(brand_lat: str, shape: str, lens: str, brand_in_title_mode: str, 
     if slogan is None:
         slogan = st.rng.choice(slogans).strip()
 
-    # фиксируем в lock
     if st.between_files_slogan_lock:
         st.global_slogans.add(slogan.lower())
         st.save_lock()
 
     sun = "солнцезащитные очки" if st.rng.random() < 0.6 else "солнечные очки"
 
-    # бренд в названии — кириллицей
     brand_ru = _brand_ru(brand_lat, st.data_dir)
 
     if brand_in_title_mode == "always":
@@ -426,31 +416,25 @@ def _gen_title(brand_lat: str, shape: str, lens: str, brand_in_title_mode: str, 
         put_brand = (st.rng.random() < 0.5)
 
     parts = [slogan, sun]
-
     if shape and st.rng.random() < 0.55:
         parts.append(shape)
-
     if put_brand and brand_ru:
         parts.append(brand_ru)
-
     if lens and st.rng.random() < 0.75:
         parts.append(lens)
 
     title = re.sub(r"\s+", " ", " ".join([p for p in parts if p]).strip())
 
-    # анти-повторы по подписи названия
-    for _ in range(220):
+    # anti repeat
+    for _ in range(200):
         sig = _normalize_plain(title)
         if sig not in st.used_title_sigs:
             st.used_title_sigs.add(sig)
             break
-        # пересоберём чуть иначе
-        st.rng.shuffle(parts)
-        # но всегда 1-й слоган, 2-й очки
-        parts = [slogan, sun] + [p for p in parts if p not in {slogan, sun}]
+        # small reshuffle
+        st.rng.shuffle(parts[2:])
         title = re.sub(r"\s+", " ", " ".join([p for p in parts if p]).strip())
 
-    # лимит 60 без обрезания слов
     while len(title) > TITLE_MAX:
         toks = title.split()
         if len(toks) <= 2:
@@ -462,7 +446,7 @@ def _gen_title(brand_lat: str, shape: str, lens: str, brand_in_title_mode: str, 
 
 
 # ----------------------------
-# Description generator (как твой пример WB)
+# Description generator (WB seller style + holiday injection)
 # ----------------------------
 
 def _build_desc_like_user(
@@ -470,21 +454,18 @@ def _build_desc_like_user(
     shape: str,
     lens: str,
     collection: str,
+    holiday: str,
     seo_level: str,
     gender_mode: str,
     variant_id: int,
     st: _RunState,
 ) -> Tuple[str, str]:
-    """
-    Возвращает (описание, struct_key) — стиль как твой пример.
-    """
-
     brand_lat = (brand_lat or "").strip()
     shape = (shape or "").strip()
     lens = (lens or "").strip()
     collection = (collection or "").strip()
+    holiday = (holiday or "").strip()
 
-    # SEO ключи (вшиваем естественно, не списком)
     core1 = st.rng.choice(["солнцезащитные очки", "солнечные очки", "очки солнцезащитные"])
     core2 = st.rng.choice(["имиджевые очки", "модные очки", "брендовые очки", "трендовые очки"])
 
@@ -500,7 +481,6 @@ def _build_desc_like_user(
     seo_level = (seo_level or "high").lower().strip()
     seo_inserts = 1 if seo_level == "low" else 2 if seo_level == "normal" else 3
 
-    # Старт — как у живого продавца (без "Dior:" и двоеточий)
     starts = [
         f"{core2.capitalize()} {brand_lat} являются отличным дополнением к любому образу",
         f"Современные {core1} {brand_lat} сделают яркий акцент как в повседневном стиле, так и в нарядном",
@@ -515,7 +495,7 @@ def _build_desc_like_user(
         "Добавляют стильный акцент и делают образ более собранным",
         "Выглядят аккуратно и дорого, при этом легко сочетаются с одеждой",
         "Подходят и под базовый гардероб, и под более яркие сочетания",
-        "Универсальный дизайн помогает выглядеть стильно в любой ситуации",
+        "Повседневный дизайн помогает выглядеть профессионально и стильно в течение дня",
     ]
 
     if shape:
@@ -523,7 +503,7 @@ def _build_desc_like_user(
             f"Красивая оправа {shape} подчёркивает черты лица и смотрится ровно",
             f"{shape.capitalize()} — удачная форма: подчёркивает стиль и не выглядит громоздко",
             f"Форма {shape} делает образ более выразительным и легко сочетается с одеждой",
-            f"Оправа {shape} разных оттенков и вариантов выглядит эффектно и аккуратно",
+            f"Оправа {shape} выглядит современно и обращает на себя внимание",
         ]
     else:
         b_frame = [
@@ -547,7 +527,7 @@ def _build_desc_like_user(
         "Подойдут для вождения, работы, учёбы, прогулок, отдыха, поездок и путешествий",
         "Можно носить в городе, в дороге, в отпуске, на пляже и на прогулках",
         "Удобны для повседневки: улица, дорога, отдых, прогулки, поездки",
-        "Хорошо заходят для повседневных дел: город, поездки, прогулки, отпуск",
+        "Подойдут для работы за компьютером, прогулок, дороги и отдыха",
     ]
 
     b_unisex = [
@@ -576,7 +556,6 @@ def _build_desc_like_user(
         "Оттенок может немного отличаться из-за настроек экрана",
     ]
 
-    # SEO вставки — как “человеческие” фразы, без списков
     seo_phrases = [
         f"Такие {core1} часто выбирают как {core2}",
         f"{core1.capitalize()} удобны для города и отдыха",
@@ -585,7 +564,14 @@ def _build_desc_like_user(
         f"{core2.capitalize()} — стильный акцент на каждый день",
     ]
 
-    # 6 структур, чтобы 6 строк были разными не только словами, но и подачей
+    holiday_phrases = []
+    if holiday:
+        holiday_phrases = [
+            f"Отлично подходит как подарок на {holiday} — аксессуар полезный и реально носится",
+            f"Если ищешь подарок на {holiday}, это прям удачный вариант: стильно и практично",
+            f"На {holiday} часто берут именно очки — вещь нужная на сезон и выглядит презентабельно",
+        ]
+
     structs = [
         ("A", [st.rng.choice(starts), st.rng.choice(b_style), st.rng.choice(b_frame), st.rng.choice(b_lens)] + b_coll +
               [st.rng.choice(b_use), st.rng.choice(b_unisex), st.rng.choice(b_gift), st.rng.choice(b_note)]),
@@ -603,20 +589,21 @@ def _build_desc_like_user(
 
     struct_key, parts = structs[variant_id % len(structs)]
 
-    # Вставляем SEO-фразы внутрь текста, чтобы выглядело естественно
+    # SEO вставки внутрь текста
     for _ in range(seo_inserts):
         pos = st.rng.randint(1, max(1, len(parts) - 2))
         parts.insert(pos, st.rng.choice(seo_phrases))
 
-    # Склейка как у продавцов: одно предложение = одна мысль
+    # Праздник — НЕ во все 6, а примерно в 2–3 из 6
+    if holiday_phrases and st.rng.random() < 0.45:
+        pos = st.rng.randint(3, max(3, len(parts) - 2))
+        parts.insert(pos, st.rng.choice(holiday_phrases))
+
     text = ". ".join([p.strip().rstrip(".") for p in parts if p and p.strip()]).strip() + "."
 
-    # зачистка служебных меток и двойных пробелов
     text = FORBIDDEN_LABELS_RE.sub("", text)
     text = re.sub(r"\s+", " ", text).strip()
     text = _cap_first(text)
-
-    # ограничение длины
     if len(text) > DESC_MAX:
         text = _cut_no_break_words(text, DESC_MAX)
 
@@ -628,19 +615,13 @@ def _generate_unique_descs(
     shape: str,
     lens: str,
     collection: str,
+    holiday: str,
     seo_level: str,
     gender_mode: str,
     uniq_strength: int,
     need: int,
     st: _RunState,
 ) -> List[str]:
-    """
-    100% анти-повторы:
-    - запрет одинакового старта (первые 12 слов)
-    - запрет одинаковой сигнатуры (первые 22 + топ-слова)
-    - строгий Jaccard (порог ниже)
-    - разные структуры A..F по строкам (пока есть)
-    """
     thr = _uni_thr(uniq_strength)
     out: List[str] = []
     used_structs: Set[str] = set()
@@ -654,13 +635,13 @@ def _generate_unique_descs(
         best_mx = 1.0
         best_struct = None
 
-        # много попыток — чтобы реально выбить уникальность
         for _ in range(320):
             cand, struct = _build_desc_like_user(
                 brand_lat=brand_lat,
                 shape=shape,
                 lens=lens,
                 collection=collection,
+                holiday=holiday,
                 seo_level=seo_level,
                 gender_mode=gender_mode,
                 variant_id=i,
@@ -675,7 +656,6 @@ def _generate_unique_descs(
             if sg in st.used_desc_sigs:
                 continue
 
-            # разные структуры пока есть
             if struct in used_structs and len(used_structs) < need:
                 continue
 
@@ -699,10 +679,9 @@ def _generate_unique_descs(
 
         if best is None:
             best, best_struct = _build_desc_like_user(
-                brand_lat, shape, lens, collection, seo_level, gender_mode, i, st
+                brand_lat, shape, lens, collection, holiday, seo_level, gender_mode, i, st
             )
 
-        # фиксируем
         out.append(best)
         st.used_desc_prefixes.add(prefix(best))
         st.used_desc_sigs.add(_desc_signature(best))
@@ -712,15 +691,12 @@ def _generate_unique_descs(
     return out[:need]
 
 
-# ----------------------------
-# Pair generator
-# ----------------------------
-
 def _generate_pair(
     brand_lat: str,
     shape: str,
     lens: str,
     collection: str,
+    holiday: str,
     seo_level: str,
     gender_mode: str,
     uniq_strength: int,
@@ -733,9 +709,10 @@ def _generate_pair(
         shape=shape,
         lens=lens,
         collection=collection,
+        holiday=holiday,
         seo_level=seo_level,
         gender_mode=gender_mode,
-        variant_id=st.rng.randint(0, 10_000),
+        variant_id=st.rng.randint(0, 999999),
         st=st,
     )
     return title, desc
