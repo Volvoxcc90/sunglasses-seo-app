@@ -8,7 +8,7 @@ from typing import Tuple
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QFileDialog,
     QVBoxLayout, QHBoxLayout, QGridLayout, QComboBox, QMessageBox,
-    QProgressBar, QFrame, QLineEdit, QSpinBox, QTextEdit, QDialog
+    QProgressBar, QFrame, QSpinBox, QTextEdit, QDialog
 )
 from PyQt5.QtCore import QThread, pyqtSignal, Qt
 
@@ -90,7 +90,7 @@ THEMES = {
         QLabel#Subtitle { color:#aab8d6; }
         QLabel#Muted { color:#97a6c7; }
         QFrame#Card { background:#0f1a2e; border:1px solid #1f2b46; border-radius:14px; }
-        QLineEdit, QComboBox, QTextEdit, QSpinBox {
+        QComboBox, QTextEdit, QSpinBox {
             background:#0b1426; border:1px solid #1f2b46; border-radius:10px; padding:10px;
         }
         QComboBox::drop-down { border:0; width:32px; }
@@ -116,7 +116,7 @@ THEMES = {
         QLabel#Subtitle { color:#55607a; }
         QLabel#Muted { color:#5f6b84; }
         QFrame#Card { background:#ffffff; border:1px solid #dfe5f1; border-radius:14px; }
-        QLineEdit, QComboBox, QTextEdit, QSpinBox { background:#ffffff; border:1px solid #dfe5f1; border-radius:10px; padding:10px; }
+        QComboBox, QTextEdit, QSpinBox { background:#ffffff; border:1px solid #dfe5f1; border-radius:10px; padding:10px; }
         QComboBox::drop-down { border:0; width:32px; }
         QComboBox::down-arrow { image:none; border-left:6px solid transparent; border-right:6px solid transparent; border-top:8px solid #2b61ff; margin-right:10px; }
         QPushButton#Primary { background:#2b61ff; border:0; border-radius:12px; padding:12px 16px; font-weight:900; color:#fff; }
@@ -187,16 +187,18 @@ class App(QWidget):
         self.settings = load_settings()
         self.xlsx_path = ""
 
-        # списки
+        # list files
         self.brands_file = self.data_dir / "brands.txt"
         self.shapes_file = self.data_dir / "shapes.txt"
         self.lenses_file = self.data_dir / "lenses.txt"
         self.collections_file = self.data_dir / "collections.txt"
+        self.holidays_file = self.data_dir / "holidays.txt"
 
         ensure_list_file(self.brands_file, ["Chrome Hearts", "Dior", "Gucci", "Prada", "Cazal", "Miu Miu"])
-        ensure_list_file(self.shapes_file, ["квадратные", "авиаторы", "овальные", "кошачий глаз", "круглые", "вайфареры"])
+        ensure_list_file(self.shapes_file, ["квадратные", "авиаторы", "овальные", "кошачий глаз", "круглые", "вайфареры", "прямоугольные"])
         ensure_list_file(self.lenses_file, ["UV400", "поляризационные", "фотохромные", "градиентные"])
         ensure_list_file(self.collections_file, ["Весна–Лето 2026", "Весна–Лето 2025–2026"])
+        ensure_list_file(self.holidays_file, ["8 Марта", "14 Февраля", "День рождения", "Новый год", "23 Февраля", "Выпускной", "Подарок без повода"])
 
         root = QVBoxLayout(self)
         root.setContentsMargins(18, 18, 18, 18)
@@ -207,7 +209,7 @@ class App(QWidget):
         hl.setContentsMargins(16, 14, 16, 14)
         title = QLabel("🕶️ Sunglasses SEO PRO")
         title.setObjectName("Title")
-        subtitle = QLabel("6 строк • Живые описания • Выпадающие списки + ручной ввод • Темы")
+        subtitle = QLabel("6 строк • Живые описания • Праздники в описание • Выпадашки + ручной ввод • Темы")
         subtitle.setObjectName("Subtitle")
         hl.addWidget(title)
         hl.addWidget(subtitle)
@@ -258,78 +260,71 @@ class App(QWidget):
         ml.setHorizontalSpacing(12)
         ml.setVerticalSpacing(10)
 
-        # --- BRAND row with +
+        # rows: brand/shape/lens/collection/holiday
         ml.addWidget(QLabel("Бренд (латиницей)"), 0, 0)
-        self.cmb_brand = QComboBox()
-        self.cmb_brand.setEditable(True)
+        self.cmb_brand = QComboBox(); self.cmb_brand.setEditable(True)
         ml.addWidget(self.cmb_brand, 0, 1)
-        self.btn_add_brand = QPushButton("+")
-        self.btn_add_brand.setObjectName("Mini")
+        self.btn_add_brand = QPushButton("+"); self.btn_add_brand.setObjectName("Mini")
         self.btn_add_brand.clicked.connect(self.add_brand)
         ml.addWidget(self.btn_add_brand, 0, 2)
 
-        # --- SHAPE row with +
         ml.addWidget(QLabel("Форма оправы"), 1, 0)
-        self.cmb_shape = QComboBox()
-        self.cmb_shape.setEditable(True)
+        self.cmb_shape = QComboBox(); self.cmb_shape.setEditable(True)
         ml.addWidget(self.cmb_shape, 1, 1)
-        self.btn_add_shape = QPushButton("+")
-        self.btn_add_shape.setObjectName("Mini")
+        self.btn_add_shape = QPushButton("+"); self.btn_add_shape.setObjectName("Mini")
         self.btn_add_shape.clicked.connect(self.add_shape)
         ml.addWidget(self.btn_add_shape, 1, 2)
 
-        # --- LENS row with +
         ml.addWidget(QLabel("Линзы"), 2, 0)
-        self.cmb_lens = QComboBox()
-        self.cmb_lens.setEditable(True)
+        self.cmb_lens = QComboBox(); self.cmb_lens.setEditable(True)
         ml.addWidget(self.cmb_lens, 2, 1)
-        self.btn_add_lens = QPushButton("+")
-        self.btn_add_lens.setObjectName("Mini")
+        self.btn_add_lens = QPushButton("+"); self.btn_add_lens.setObjectName("Mini")
         self.btn_add_lens.clicked.connect(self.add_lens)
         ml.addWidget(self.btn_add_lens, 2, 2)
 
-        # --- COLLECTION row with +
         ml.addWidget(QLabel("Коллекция"), 3, 0)
-        self.cmb_collection = QComboBox()
-        self.cmb_collection.setEditable(True)
+        self.cmb_collection = QComboBox(); self.cmb_collection.setEditable(True)
         ml.addWidget(self.cmb_collection, 3, 1)
-        self.btn_add_collection = QPushButton("+")
-        self.btn_add_collection.setObjectName("Mini")
+        self.btn_add_collection = QPushButton("+"); self.btn_add_collection.setObjectName("Mini")
         self.btn_add_collection.clicked.connect(self.add_collection)
         ml.addWidget(self.btn_add_collection, 3, 2)
 
+        ml.addWidget(QLabel("Праздник (в описание)"), 4, 0)
+        self.cmb_holiday = QComboBox(); self.cmb_holiday.setEditable(True)
+        ml.addWidget(self.cmb_holiday, 4, 1)
+        self.btn_add_holiday = QPushButton("+"); self.btn_add_holiday.setObjectName("Mini")
+        self.btn_add_holiday.clicked.connect(self.add_holiday)
+        ml.addWidget(self.btn_add_holiday, 4, 2)
+
         # controls
-        ml.addWidget(QLabel("SEO"), 4, 0)
+        ml.addWidget(QLabel("SEO"), 5, 0)
         self.cmb_seo = QComboBox()
         self.cmb_seo.addItems(["low", "normal", "high"])
         self.cmb_seo.setCurrentText(self.settings.get("seo_level", "high"))
-        ml.addWidget(self.cmb_seo, 4, 1, 1, 2)
+        ml.addWidget(self.cmb_seo, 5, 1, 1, 2)
 
-        ml.addWidget(QLabel("Пол"), 5, 0)
+        ml.addWidget(QLabel("Пол"), 6, 0)
         self.cmb_gender = QComboBox()
         self.cmb_gender.addItems(["Auto", "Женские", "Мужские", "Унисекс"])
         self.cmb_gender.setCurrentText(self.settings.get("gender_mode", "Auto"))
-        ml.addWidget(self.cmb_gender, 5, 1, 1, 2)
+        ml.addWidget(self.cmb_gender, 6, 1, 1, 2)
 
-        ml.addWidget(QLabel("Бренд в названии"), 6, 0)
+        ml.addWidget(QLabel("Бренд в названии"), 7, 0)
         self.cmb_brand_title = QComboBox()
         self.cmb_brand_title.addItems(["50/50", "Всегда", "Никогда"])
         self.cmb_brand_title.setCurrentText(self.settings.get("brand_title_ui", "50/50"))
-        ml.addWidget(self.cmb_brand_title, 6, 1, 1, 2)
+        ml.addWidget(self.cmb_brand_title, 7, 1, 1, 2)
 
         self.spin_rows = QSpinBox()
-        self.spin_rows.setMinimum(6)
-        self.spin_rows.setMaximum(6)
-        self.spin_rows.setValue(6)
-        ml.addWidget(QLabel("Строк заполнять"), 7, 0)
-        ml.addWidget(self.spin_rows, 7, 1, 1, 2)
+        self.spin_rows.setMinimum(6); self.spin_rows.setMaximum(6); self.spin_rows.setValue(6)
+        ml.addWidget(QLabel("Строк заполнять"), 8, 0)
+        ml.addWidget(self.spin_rows, 8, 1, 1, 2)
 
         self.spin_uniq = QSpinBox()
-        self.spin_uniq.setMinimum(60)
-        self.spin_uniq.setMaximum(95)
+        self.spin_uniq.setMinimum(60); self.spin_uniq.setMaximum(95)
         self.spin_uniq.setValue(int(self.settings.get("uniq_strength", 90)))
-        ml.addWidget(QLabel("Уникализация"), 8, 0)
-        ml.addWidget(self.spin_uniq, 8, 1, 1, 2)
+        ml.addWidget(QLabel("Уникализация"), 9, 0)
+        ml.addWidget(self.spin_uniq, 9, 1, 1, 2)
 
         root.addWidget(main)
 
@@ -372,73 +367,73 @@ class App(QWidget):
 
     # ---------- List management ----------
     def reload_lists(self, keep_current: bool = True):
-        # IMPORTANT: do NOT overwrite current selection accidentally
         cur_b = self.cmb_brand.currentText().strip() if keep_current else ""
         cur_s = self.cmb_shape.currentText().strip() if keep_current else ""
         cur_l = self.cmb_lens.currentText().strip() if keep_current else ""
         cur_c = self.cmb_collection.currentText().strip() if keep_current else ""
+        cur_h = self.cmb_holiday.currentText().strip() if keep_current else ""
 
         brands = load_list(self.brands_file, [])
         shapes = load_list(self.shapes_file, [])
         lenses = load_list(self.lenses_file, [])
         colls = load_list(self.collections_file, [])
+        hols = load_list(self.holidays_file, [])
 
-        self.cmb_brand.blockSignals(True)
-        self.cmb_shape.blockSignals(True)
-        self.cmb_lens.blockSignals(True)
-        self.cmb_collection.blockSignals(True)
+        for cb in (self.cmb_brand, self.cmb_shape, self.cmb_lens, self.cmb_collection, self.cmb_holiday):
+            cb.blockSignals(True)
 
         self.cmb_brand.clear(); self.cmb_brand.addItems(brands)
         self.cmb_shape.clear(); self.cmb_shape.addItems(shapes)
         self.cmb_lens.clear(); self.cmb_lens.addItems(lenses)
         self.cmb_collection.clear(); self.cmb_collection.addItems(colls)
+        self.cmb_holiday.clear(); self.cmb_holiday.addItems(hols)
 
-        # restore: priority current input, then settings, then first item
         if keep_current and cur_b:
             self.cmb_brand.setCurrentText(cur_b)
-        elif self.settings.get("brand"):
-            self.cmb_brand.setCurrentText(self.settings["brand"])
+        else:
+            self.cmb_brand.setCurrentText(self.settings.get("brand", self.cmb_brand.currentText()))
 
         if keep_current and cur_s:
             self.cmb_shape.setCurrentText(cur_s)
-        elif self.settings.get("shape"):
-            self.cmb_shape.setCurrentText(self.settings["shape"])
+        else:
+            self.cmb_shape.setCurrentText(self.settings.get("shape", self.cmb_shape.currentText()))
 
         if keep_current and cur_l:
             self.cmb_lens.setCurrentText(cur_l)
-        elif self.settings.get("lens"):
-            self.cmb_lens.setCurrentText(self.settings["lens"])
+        else:
+            self.cmb_lens.setCurrentText(self.settings.get("lens", self.cmb_lens.currentText()))
 
         if keep_current and cur_c:
             self.cmb_collection.setCurrentText(cur_c)
-        elif self.settings.get("collection"):
-            self.cmb_collection.setCurrentText(self.settings["collection"])
-        elif colls:
-            self.cmb_collection.setCurrentText(colls[0])
+        else:
+            self.cmb_collection.setCurrentText(self.settings.get("collection", self.cmb_collection.currentText()))
 
-        self.cmb_brand.blockSignals(False)
-        self.cmb_shape.blockSignals(False)
-        self.cmb_lens.blockSignals(False)
-        self.cmb_collection.blockSignals(False)
+        if keep_current and cur_h:
+            self.cmb_holiday.setCurrentText(cur_h)
+        else:
+            self.cmb_holiday.setCurrentText(self.settings.get("holiday", ""))
+
+        for cb in (self.cmb_brand, self.cmb_shape, self.cmb_lens, self.cmb_collection, self.cmb_holiday):
+            cb.blockSignals(False)
 
     def add_brand(self):
-        v = self.cmb_brand.currentText().strip()
-        add_to_list(self.brands_file, v)
+        add_to_list(self.brands_file, self.cmb_brand.currentText().strip())
         self.reload_lists(keep_current=True)
 
     def add_shape(self):
-        v = self.cmb_shape.currentText().strip()
-        add_to_list(self.shapes_file, v)
+        add_to_list(self.shapes_file, self.cmb_shape.currentText().strip())
         self.reload_lists(keep_current=True)
 
     def add_lens(self):
-        v = self.cmb_lens.currentText().strip()
-        add_to_list(self.lenses_file, v)
+        add_to_list(self.lenses_file, self.cmb_lens.currentText().strip())
         self.reload_lists(keep_current=True)
 
     def add_collection(self):
-        v = self.cmb_collection.currentText().strip()
-        add_to_list(self.collections_file, v)
+        add_to_list(self.collections_file, self.cmb_collection.currentText().strip())
+        self.reload_lists(keep_current=True)
+
+    def add_holiday(self):
+        add_to_list(self.holidays_file, self.cmb_holiday.currentText().strip())
         self.reload_lists(keep_current=True)
 
     # ---------- Helpers ----------
@@ -450,20 +445,21 @@ class App(QWidget):
             return "never"
         return "smart50"
 
-    def _read_current_inputs(self) -> Tuple[str, str, str, str]:
-        # IMPORTANT: read first, BEFORE any reload_lists
+    def _read_current_inputs(self) -> Tuple[str, str, str, str, str]:
         b = self.cmb_brand.currentText().strip()
         s = self.cmb_shape.currentText().strip()
         l = self.cmb_lens.currentText().strip()
         c = self.cmb_collection.currentText().strip()
-        return b, s, l, c
+        h = self.cmb_holiday.currentText().strip()
+        return b, s, l, c, h
 
-    def _persist_last_inputs(self, b: str, s: str, l: str, c: str):
+    def _persist_last_inputs(self, b: str, s: str, l: str, c: str, h: str):
         self.settings.update({
             "brand": b,
             "shape": s,
             "lens": l,
             "collection": c,
+            "holiday": h,
             "seo_level": self.cmb_seo.currentText(),
             "gender_mode": self.cmb_gender.currentText(),
             "brand_title_ui": self.cmb_brand_title.currentText(),
@@ -474,9 +470,10 @@ class App(QWidget):
     # ---------- Preview / Run ----------
     def preview(self):
         try:
-            b, s, l, c = self._read_current_inputs()
+            b, s, l, c, h = self._read_current_inputs()
             items = generate_preview(
                 brand_lat=b, shape=s, lens=l, collection=c,
+                holiday=h,
                 seo_level=self.cmb_seo.currentText(),
                 gender_mode=self.cmb_gender.currentText(),
                 uniq_strength=int(self.spin_uniq.value()),
@@ -493,19 +490,17 @@ class App(QWidget):
             QMessageBox.warning(self, "Файл", "Сначала выбери XLSX файл.")
             return
 
-        # 1) СНАЧАЛА читаем то, что выбрано сейчас (чтобы не было Chrome Hearts)
-        b, s, l, c = self._read_current_inputs()
+        # IMPORTANT: читаем выбор ДО любых reload/save
+        b, s, l, c, h = self._read_current_inputs()
 
-        # 2) сохраняем в списки только если хочешь (можно оставить автосейв)
+        # автосохранение новых значений
         add_to_list(self.brands_file, b)
         add_to_list(self.shapes_file, s)
         add_to_list(self.lenses_file, l)
         add_to_list(self.collections_file, c)
+        add_to_list(self.holidays_file, h)
 
-        # 3) сохраняем settings (последнее выбранное)
-        self._persist_last_inputs(b, s, l, c)
-
-        # 4) НЕ ДЕЛАЕМ reload_lists() здесь — это и ломало выбор
+        self._persist_last_inputs(b, s, l, c, h)
 
         args = dict(
             input_xlsx=self.xlsx_path,
@@ -513,6 +508,7 @@ class App(QWidget):
             shape=s,
             lens=l,
             collection=c,
+            holiday=h,
             seo_level=self.cmb_seo.currentText(),
             gender_mode=self.cmb_gender.currentText(),
             uniq_strength=int(self.spin_uniq.value()),
@@ -538,8 +534,6 @@ class App(QWidget):
         self.btn_run.setEnabled(True)
         self.progress.setValue(100)
         QMessageBox.information(self, "Готово", f"Сохранено:\n{out_path}")
-
-        # после успешной генерации можно обновить списки (НЕ мешая текущему выбору)
         self.reload_lists(keep_current=True)
 
     def fail(self, msg: str):
@@ -548,7 +542,6 @@ class App(QWidget):
 
 
 def main():
-    # High-DPI, чтобы не было мелко
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
 
