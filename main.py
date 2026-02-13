@@ -5,16 +5,15 @@ import os
 import re
 import json
 import time
-import random
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set
 
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QFont, QIcon
+from PyQt5.QtGui import QFont
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QFileDialog, QLineEdit,
     QVBoxLayout, QHBoxLayout, QGridLayout, QComboBox, QMessageBox,
-    QProgressBar, QSpinBox, QDoubleSpinBox
+    QProgressBar, QSpinBox
 )
 
 from wb_fill import FillParams, fill_wb_template
@@ -34,8 +33,8 @@ def app_data_dir() -> Path:
 
 
 DATA_DIR = app_data_dir()
-BRANDS_FILE = DATA_DIR / "brands.txt"          # латиница список
-BRANDS_RU_FILE = DATA_DIR / "brands_ru.json"   # {"dior":"Диор", ...}
+BRANDS_FILE = DATA_DIR / "brands.txt"
+BRANDS_RU_FILE = DATA_DIR / "brands_ru.json"
 SHAPES_FILE = DATA_DIR / "shapes.txt"
 LENSES_FILE = DATA_DIR / "lenses.txt"
 COLLECTIONS_FILE = DATA_DIR / "collections.txt"
@@ -69,7 +68,7 @@ def save_list_append(file: Path, value: str) -> None:
     if value in existing:
         return
     with file.open("a", encoding="utf-8") as f:
-        if file.stat().st_size > 0:
+        if file.exists() and file.stat().st_size > 0:
             f.write("\n")
         f.write(value)
 
@@ -102,7 +101,7 @@ def save_settings(s: Dict) -> None:
 
 
 # ----------------------------
-# Themes (UI как на скрине)
+# Themes (как на скрине)
 # ----------------------------
 THEMES = {
     "Graphite": r"""
@@ -115,7 +114,7 @@ THEMES = {
             border:1px solid #1f2b46;
             border-radius:16px;
         }
-        QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
+        QLineEdit, QComboBox, QSpinBox {
             background:#0b1426;
             border:1px solid #1f2b46;
             border-radius:10px;
@@ -180,7 +179,7 @@ THEMES = {
             border:1px solid #1f2b46;
             border-radius:16px;
         }
-        QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
+        QLineEdit, QComboBox, QSpinBox {
             background:#0b1426;
             border:1px solid #1f2b46;
             border-radius:10px;
@@ -236,7 +235,7 @@ THEMES = {
 
 
 # ----------------------------
-# Worker thread
+# Worker
 # ----------------------------
 class Worker(QThread):
     progress = pyqtSignal(int)
@@ -249,12 +248,14 @@ class Worker(QThread):
         out_dir: str,
         files_count: int,
         rows_to_fill: int,
+        skip_top_rows: int,
         brand_lat: str,
         brand_ru: str,
         shape: str,
         lens: str,
         collection: str,
         holiday: str,
+        holiday_pos: str,
         seo_level: str,
         style: str,
         gender: str,
@@ -265,12 +266,14 @@ class Worker(QThread):
         self.out_dir = out_dir
         self.files_count = files_count
         self.rows_to_fill = rows_to_fill
+        self.skip_top_rows = skip_top_rows
         self.brand_lat = brand_lat
         self.brand_ru = brand_ru
         self.shape = shape
         self.lens = lens
         self.collection = collection
         self.holiday = holiday
+        self.holiday_pos = holiday_pos
         self.seo_level = seo_level
         self.style = style
         self.gender = gender
@@ -303,20 +306,19 @@ class Worker(QThread):
                     style=self.style,
                     gender=self.gender,
                     holiday=self.holiday,
+                    holiday_pos=self.holiday_pos,
                     rows_to_fill=self.rows_to_fill,
-                    skip_top_rows=4,
+                    skip_top_rows=self.skip_top_rows,
                     brand_in_title_ratio=self.brand_ratio,
                     seed=seed,
                 )
 
                 def cb(p):
-                    # прогресс внутри файла + прогресс по пачке
                     base = int(i / total_steps * 100)
                     add = int(p / total_steps)
                     self.progress.emit(min(100, base + add))
 
                 fill_wb_template(params, used_openers_global=used_openers_global, progress_callback=cb)
-
                 self.progress.emit(int((i + 1) / total_steps * 100))
 
             self.done.emit(str(out_dir))
@@ -332,8 +334,6 @@ class App(QWidget):
         super().__init__()
         self.setWindowTitle(APP_NAME)
         self.setMinimumSize(1100, 680)
-
-        # крупнее, чтобы не было "маленькое окно/буквы"
         self.setFont(QFont("Segoe UI", 10))
 
         self.settings = load_settings()
@@ -364,7 +364,7 @@ class App(QWidget):
 
         title = QLabel("🕶️  Sunglasses SEO PRO")
         title.setObjectName("Title")
-        subtitle = QLabel("Заполняет Наименование + Описание (ровно 6 строк), с живым SEO и реальным рандомом")
+        subtitle = QLabel("Живые SEO-описания • Выпадающие списки • Прогресс • Темы • Anti-повторы PRO")
         subtitle.setObjectName("Subtitle")
 
         lay_h.addWidget(title)
@@ -430,7 +430,7 @@ class App(QWidget):
 
         r = 0
 
-        # Brand (latin) — editable combo
+        # Brand (latin)
         grid.addWidget(QLabel("Бренд (латиницей)"), r, 0)
         self.cmb_brand = QComboBox()
         self.cmb_brand.setEditable(True)
@@ -442,9 +442,9 @@ class App(QWidget):
         self.btn_add_brand.setObjectName("Small")
         self.btn_add_brand.clicked.connect(self._add_brand)
         grid.addWidget(self.btn_add_brand, r, 3)
-
         r += 1
 
+        # Shape
         grid.addWidget(QLabel("Форма оправы"), r, 0)
         self.cmb_shape = QComboBox()
         self.cmb_shape.setEditable(True)
@@ -456,9 +456,9 @@ class App(QWidget):
         self.btn_add_shape.setObjectName("Small")
         self.btn_add_shape.clicked.connect(self._add_shape)
         grid.addWidget(self.btn_add_shape, r, 3)
-
         r += 1
 
+        # Lens
         grid.addWidget(QLabel("Линзы"), r, 0)
         self.cmb_lens = QComboBox()
         self.cmb_lens.setEditable(True)
@@ -470,18 +470,18 @@ class App(QWidget):
         self.btn_add_lens.setObjectName("Small")
         self.btn_add_lens.clicked.connect(self._add_lens)
         grid.addWidget(self.btn_add_lens, r, 3)
-
         r += 1
 
+        # Collection
         grid.addWidget(QLabel("Коллекция"), r, 0)
         self.cmb_collection = QComboBox()
         self.cmb_collection.setEditable(True)
         self.cmb_collection.addItems(self.collections)
         self.cmb_collection.setCurrentText(self.settings.get("collection", self.collections[0] if self.collections else "Весна–Лето 2026"))
         grid.addWidget(self.cmb_collection, r, 1, 1, 3)
-
         r += 1
 
+        # Holiday
         grid.addWidget(QLabel("Праздник (в описание)"), r, 0)
         self.cmb_holiday = QComboBox()
         self.cmb_holiday.setEditable(True)
@@ -490,10 +490,15 @@ class App(QWidget):
             "Выпускной", "Подарок без повода", "Лето / отпуск"
         ])
         self.cmb_holiday.setCurrentText(self.settings.get("holiday", ""))
-        grid.addWidget(self.cmb_holiday, r, 1, 1, 3)
+        grid.addWidget(self.cmb_holiday, r, 1, 1, 2)
 
+        self.cmb_holiday_pos = QComboBox()
+        self.cmb_holiday_pos.addItems(["middle", "end"])
+        self.cmb_holiday_pos.setCurrentText(self.settings.get("holiday_pos", "middle"))
+        grid.addWidget(self.cmb_holiday_pos, r, 3)
         r += 1
 
+        # SEO + Style
         grid.addWidget(QLabel("SEO-плотность"), r, 0)
         self.cmb_seo = QComboBox()
         self.cmb_seo.addItems(["low", "normal", "high"])
@@ -505,9 +510,9 @@ class App(QWidget):
         self.cmb_style.addItems(["premium", "market", "social", "neutral"])
         self.cmb_style.setCurrentText(self.settings.get("style", "premium"))
         grid.addWidget(self.cmb_style, r, 3)
-
         r += 1
 
+        # Gender + Brand ratio
         grid.addWidget(QLabel("Пол"), r, 0)
         self.cmb_gender = QComboBox()
         self.cmb_gender.addItems(["auto", "female", "male", "unisex"])
@@ -519,9 +524,9 @@ class App(QWidget):
         self.cmb_brand_title.addItems(["0/100", "50/50", "100/0"])
         self.cmb_brand_title.setCurrentText(self.settings.get("brand_title", "50/50"))
         grid.addWidget(self.cmb_brand_title, r, 3)
-
         r += 1
 
+        # Rows + Files
         grid.addWidget(QLabel("Строк заполнять"), r, 0)
         self.spin_rows = QSpinBox()
         self.spin_rows.setRange(1, 50)
@@ -533,6 +538,14 @@ class App(QWidget):
         self.spin_files.setRange(1, 50)
         self.spin_files.setValue(int(self.settings.get("files", 1)))
         grid.addWidget(self.spin_files, r, 3)
+        r += 1
+
+        # NEW: skip top rows
+        grid.addWidget(QLabel("Не трогать первые строк"), r, 0)
+        self.spin_skip = QSpinBox()
+        self.spin_skip.setRange(0, 50)
+        self.spin_skip.setValue(int(self.settings.get("skip", 4)))
+        grid.addWidget(self.spin_skip, r, 1, 1, 3)
 
         root.addWidget(card_params)
 
@@ -551,16 +564,11 @@ class App(QWidget):
 
         root.addLayout(bottom)
 
-        # fix size
-        for cb in (self.cmb_theme, self.cmb_brand, self.cmb_shape, self.cmb_lens, self.cmb_collection, self.cmb_holiday,
-                   self.cmb_seo, self.cmb_style, self.cmb_gender, self.cmb_brand_title):
-            cb.setMinimumHeight(36)
-
-        # restore theme selection in UI
+        # restore theme
         self.cmb_theme.setCurrentText(self.settings.get("theme", "Graphite"))
 
     # --------------------------
-    # Actions
+    # Theme / folders / load
     # --------------------------
     def _apply_theme(self, theme: str):
         theme = theme if theme in THEMES else "Graphite"
@@ -595,9 +603,18 @@ class App(QWidget):
         self.ed_out.setText(d)
         self._save_settings()
 
+    # --------------------------
+    # Add items (+)
+    # --------------------------
+    def _reload_combo(self, cb: QComboBox, items: List[str], current: str):
+        cb.blockSignals(True)
+        cb.clear()
+        cb.addItems(items)
+        cb.setEditable(True)
+        cb.setCurrentText(current)
+        cb.blockSignals(False)
+
     def _add_brand(self):
-        # просим латиницу и кириллицу
-        lat, ok = QFileDialog.getSaveFileName  # just to avoid extra imports? no. We'll use QMessageBox+QLineEdit trick.
         from PyQt5.QtWidgets import QInputDialog
 
         brand_lat, ok1 = QInputDialog.getText(self, "Добавить бренд (латиница)", "Например: Miu Miu")
@@ -617,9 +634,7 @@ class App(QWidget):
         self.brand_ru_map[key] = brand_ru
         save_brand_ru_map(self.brand_ru_map)
 
-        # обновим комбобокс
         self._reload_combo(self.cmb_brand, self.brands, brand_lat)
-
         QMessageBox.information(self, "Готово", f"Добавлено:\n{brand_lat} → {brand_ru}")
 
     def _add_shape(self):
@@ -642,17 +657,11 @@ class App(QWidget):
         self.lenses = load_list(LENSES_FILE, self.lenses)
         self._reload_combo(self.cmb_lens, self.lenses, val)
 
-    def _reload_combo(self, cb: QComboBox, items: List[str], current: str):
-        cb.blockSignals(True)
-        cb.clear()
-        cb.addItems(items)
-        cb.setEditable(True)
-        cb.setCurrentText(current)
-        cb.blockSignals(False)
-
+    # --------------------------
+    # Generation
+    # --------------------------
     def _brand_ru_for(self, brand_lat: str) -> str:
-        key = _norm_key(brand_lat)
-        return self.brand_ru_map.get(key, "")  # если нет — пусто (бренд в названии может не вставляться)
+        return self.brand_ru_map.get(_norm_key(brand_lat), "")
 
     def _brand_ratio(self) -> float:
         v = self.cmb_brand_title.currentText()
@@ -675,18 +684,9 @@ class App(QWidget):
         lens = self.cmb_lens.currentText().strip()
         collection = self.cmb_collection.currentText().strip()
         holiday = self.cmb_holiday.currentText().strip()
+        holiday_pos = self.cmb_holiday_pos.currentText().strip()
 
         brand_ru = self._brand_ru_for(brand_lat)
-
-        # если бренд в названии включён, но кириллицы нет — предупреждаем один раз
-        if self._brand_ratio() > 0 and not brand_ru:
-            QMessageBox.information(
-                self,
-                "Подсказка",
-                "Для этого бренда нет кириллицы для названия.\n"
-                "Нажми '+' рядом с брендом и добавь соответствие латиница→кириллица.\n"
-                "В описании бренд останется латиницей."
-            )
 
         self.progress.setValue(0)
         self.btn_go.setEnabled(False)
@@ -696,12 +696,14 @@ class App(QWidget):
             out_dir=self.out_dir,
             files_count=int(self.spin_files.value()),
             rows_to_fill=int(self.spin_rows.value()),
+            skip_top_rows=int(self.spin_skip.value()),
             brand_lat=brand_lat,
             brand_ru=brand_ru,
             shape=shape,
             lens=lens,
             collection=collection,
             holiday=holiday,
+            holiday_pos=holiday_pos,
             seo_level=self.cmb_seo.currentText(),
             style=self.cmb_style.currentText(),
             gender=self.cmb_gender.currentText(),
@@ -730,12 +732,14 @@ class App(QWidget):
             "lens": self.cmb_lens.currentText(),
             "collection": self.cmb_collection.currentText(),
             "holiday": self.cmb_holiday.currentText(),
+            "holiday_pos": self.cmb_holiday_pos.currentText(),
             "seo": self.cmb_seo.currentText(),
             "style": self.cmb_style.currentText(),
             "gender": self.cmb_gender.currentText(),
             "brand_title": self.cmb_brand_title.currentText(),
             "rows": int(self.spin_rows.value()),
             "files": int(self.spin_files.value()),
+            "skip": int(self.spin_skip.value()),
             "out_dir": self.out_dir or "",
         }
         save_settings(s)
